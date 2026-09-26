@@ -9,6 +9,8 @@ class TurnamenModel {
   final int kuota;
   final String status;
   final bool isPrivate;
+  final bool isLocked;
+  final String emailUser; // Email pemilik turnamen (untuk isolasi per akun)
 
   TurnamenModel({
     required this.idTurnamen,
@@ -21,6 +23,8 @@ class TurnamenModel {
     required this.kuota,
     this.status = 'Akan Datang',
     this.isPrivate = false,
+    this.isLocked = false,
+    this.emailUser = '',
   });
 
   Map<String, dynamic> toMap() {
@@ -35,6 +39,8 @@ class TurnamenModel {
       'kuota': kuota,
       'status': status,
       'is_private': isPrivate ? 1 : 0,
+      'is_locked': isLocked ? 1 : 0,
+      'email_user': emailUser,
     };
   }
 
@@ -50,6 +56,8 @@ class TurnamenModel {
       kuota: map['kuota'] as int,
       status: map['status'] as String? ?? 'Akan Datang',
       isPrivate: map['is_private'] == 1 || map['is_private'] == true || map['isPrivate'] == true,
+      isLocked: map['is_locked'] == 1 || map['is_locked'] == true || map['isLocked'] == true,
+      emailUser: (map['email_user'] as String?) ?? '',
     );
   }
 
@@ -64,6 +72,8 @@ class TurnamenModel {
     int? kuota,
     String? status,
     bool? isPrivate,
+    bool? isLocked,
+    String? emailUser,
   }) {
     return TurnamenModel(
       idTurnamen: idTurnamen ?? this.idTurnamen,
@@ -76,6 +86,8 @@ class TurnamenModel {
       kuota: kuota ?? this.kuota,
       status: status ?? this.status,
       isPrivate: isPrivate ?? this.isPrivate,
+      isLocked: isLocked ?? this.isLocked,
+      emailUser: emailUser ?? this.emailUser,
     );
   }
 }

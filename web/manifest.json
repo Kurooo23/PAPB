@@ -1,6 +1,6 @@
 {
-    "name": "app_papb",
-    "short_name": "app_papb",
+    "name": "RivNet",
+    "short_name": "RivNet",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",

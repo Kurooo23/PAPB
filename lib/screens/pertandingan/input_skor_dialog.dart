@@ -34,7 +34,7 @@ class _InputSkorDialogState extends State<InputSkorDialog> {
     super.initState();
     _score1 = widget.match.skorPeserta1;
     _score2 = widget.match.skorPeserta2;
-    _status = widget.match.status;
+    _status = widget.match.status == 'Belum Mulai' ? 'Berlangsung' : widget.match.status;
   }
 
   Future<void> _saveScore() async {
@@ -168,10 +168,8 @@ class _InputSkorDialogState extends State<InputSkorDialog> {
             const SizedBox(height: 8),
             Row(
               children: [
-                _buildStatusChip('Belum Mulai'),
-                const SizedBox(width: 8),
                 _buildStatusChip('Berlangsung'),
-                const SizedBox(width: 8),
+                const SizedBox(width: 10),
                 _buildStatusChip('Selesai'),
               ],
             ),

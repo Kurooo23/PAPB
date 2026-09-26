@@ -4,6 +4,7 @@ import '../../core/theme/app_colors.dart';
 import '../../data/database_helper.dart';
 import '../../data/services/api_service.dart';
 import '../../data/services/local_tournament_service.dart';
+import '../auth/login_screen.dart';
 
 class BuatTurnamenScreen extends StatefulWidget {
   const BuatTurnamenScreen({super.key});
@@ -340,8 +341,17 @@ class _BuatTurnamenScreenState extends State<BuatTurnamenScreen> {
           tanggalMulai: DateTime.now(),
           kuota: _kuota,
           peserta: pesertaList,
+          emailUser: _currentUser?['email']?.toString() ?? '',
         );
       } else {
+        // Cek apakah user sudah login sebelum membuat turnamen publik
+        if (_currentUser == null) {
+          if (mounted) {
+            setState(() => _isLoading = false);
+            _showLoginRequiredDialog();
+          }
+          return;
+        }
         await _apiService.createTurnamen(
           namaTurnamen: _namaController.text.trim(),
           deskripsi: _deskripsiController.text.trim().isEmpty
@@ -379,6 +389,51 @@ class _BuatTurnamenScreenState extends State<BuatTurnamenScreen> {
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
+  }
+
+  void _showLoginRequiredDialog() {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.bgDarkSecondary,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(
+          children: [
+            Icon(Icons.lock_outline_rounded, color: AppColors.secondary, size: 22),
+            SizedBox(width: 8),
+            Text(
+              'Login Diperlukan',
+              style: TextStyle(color: AppColors.textPrimary, fontSize: 16, fontWeight: FontWeight.bold),
+            ),
+          ],
+        ),
+        content: const Text(
+          'Untuk membuat turnamen online (publik), Anda harus masuk ke akun terlebih dahulu agar data tersimpan di server dan dapat dilihat oleh pemain lain.',
+          style: TextStyle(color: AppColors.textSecondary, fontSize: 13, height: 1.4),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Tetap Privat', style: TextStyle(color: AppColors.textMuted)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary),
+            onPressed: () async {
+              Navigator.pop(ctx);
+              await Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const LoginScreen()),
+              );
+              await _loadCurrentUser();
+              if (_currentUser != null && mounted) {
+                setState(() => _isPrivate = false);
+              }
+            },
+            child: const Text('Login Sekarang', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -660,7 +715,13 @@ class _BuatTurnamenScreenState extends State<BuatTurnamenScreen> {
                   ),
                   label: const Text('Publik (Online)'),
                   selected: !_isPrivate,
-                  onSelected: (_) => setState(() => _isPrivate = false),
+                  onSelected: (_) {
+                    if (_currentUser == null) {
+                      _showLoginRequiredDialog();
+                    } else {
+                      setState(() => _isPrivate = false);
+                    }
+                  },
                   selectedColor: AppColors.primary,
                   backgroundColor: AppColors.bgDarkSecondary,
                   labelStyle: TextStyle(
@@ -700,8 +761,8 @@ class _BuatTurnamenScreenState extends State<BuatTurnamenScreen> {
                 Expanded(
                   child: Text(
                     _isPrivate
-                        ? 'Tersimpan aman di Database SQLite lokal di HP ini (rivnet.db). Bekerja 100% offline tanpa perlu koneksi server backend.'
-                        : 'Tersimpan di server backend Express.js / Cloud. Data dapat diakses secara online antardevice.',
+                        ? 'Tersimpan di Database lokal di HP anda. 100% offline tanpa perlu koneksi.'
+                        : 'Tersimpan di server Cloud. Data dapat diakses secara online.',
                     style: const TextStyle(color: AppColors.textSecondary, fontSize: 11, height: 1.3),
                   ),
                 ),

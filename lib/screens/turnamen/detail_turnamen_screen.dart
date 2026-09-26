@@ -231,6 +231,17 @@ class _DetailTurnamenScreenState extends State<DetailTurnamenScreen>
   }
 
   void _openInputSkor(PertandinganModel match) {
+    // Cek apakah turnamen sudah dikunci (diakhiri)
+    if (_turnamen?.isLocked == true) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Turnamen telah diakhiri. Skor tidak dapat diedit lagi.'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+      return;
+    }
+
     if (match.idPeserta1 == null || match.idPeserta2 == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -249,6 +260,73 @@ class _DetailTurnamenScreenState extends State<DetailTurnamenScreen>
         onSaved: _loadData,
       ),
     );
+  }
+
+  Future<void> _akhiriTurnamen() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.bgDarkSecondary,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(
+          children: [
+            Icon(Icons.lock_rounded, color: AppColors.warning),
+            SizedBox(width: 8),
+            Text('Akhiri Turnamen?', style: TextStyle(color: AppColors.textPrimary, fontSize: 18)),
+          ],
+        ),
+        content: const Text(
+          'Setelah turnamen diakhiri, semua skor akan dikunci dan tidak dapat diedit lagi.\n\nApakah kamu yakin ingin mengakhiri turnamen ini?',
+          style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Batal', style: TextStyle(color: AppColors.textSecondary)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.warning,
+              foregroundColor: Colors.black,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Ya, Akhiri Turnamen', style: TextStyle(fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true) {
+      try {
+        final updated = _turnamen!.copyWith(status: 'Selesai', isLocked: true);
+        if (_isPrivate) {
+          await _localService.updateTurnamen(updated);
+        } else {
+          await _apiService.updateTurnamen(updated);
+        }
+        if (mounted) {
+          setState(() {
+            _turnamen = updated;
+          });
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Turnamen telah diakhiri! Skor telah dikunci.'),
+              backgroundColor: AppColors.success,
+            ),
+          );
+          _loadData();
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Gagal mengakhiri turnamen: $e'),
+              backgroundColor: AppColors.error,
+            ),
+          );
+        }
+      }
+    }
   }
 
   Color _getStatusColor(String status) {
@@ -363,79 +441,96 @@ class _DetailTurnamenScreenState extends State<DetailTurnamenScreen>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // Badges: Status & Privasi
                   Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                            decoration: BoxDecoration(
-                              color: statusColor.withValues(alpha: 0.15),
-                              borderRadius: BorderRadius.circular(20),
-                              border: Border.all(color: statusColor.withValues(alpha: 0.4)),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Container(
-                                  width: 7,
-                                  height: 7,
-                                  decoration: BoxDecoration(
-                                    color: statusColor,
-                                    shape: BoxShape.circle,
-                                  ),
-                                ),
-                                const SizedBox(width: 6),
-                                Text(
-                                  t.status,
-                                  style: TextStyle(
-                                    color: statusColor,
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: _isPrivate
-                                  ? const Color(0xFF10B981).withValues(alpha: 0.15)
-                                  : AppColors.secondary.withValues(alpha: 0.15),
-                              borderRadius: BorderRadius.circular(20),
-                              border: Border.all(
-                                color: _isPrivate
-                                    ? const Color(0xFF10B981).withValues(alpha: 0.4)
-                                    : AppColors.secondary.withValues(alpha: 0.4),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                        decoration: BoxDecoration(
+                          color: statusColor.withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(color: statusColor.withValues(alpha: 0.4)),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              width: 7,
+                              height: 7,
+                              decoration: BoxDecoration(
+                                color: statusColor,
+                                shape: BoxShape.circle,
                               ),
                             ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(
-                                  _isPrivate ? Icons.lock_rounded : Icons.public_rounded,
-                                  size: 11,
-                                  color: _isPrivate ? const Color(0xFF10B981) : AppColors.secondary,
-                                ),
-                                const SizedBox(width: 4),
-                                Text(
-                                  _isPrivate ? 'Privat (Lokal HP)' : 'Publik',
-                                  style: TextStyle(
-                                    color: _isPrivate ? const Color(0xFF10B981) : AppColors.secondary,
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ],
+                            const SizedBox(width: 6),
+                            Text(
+                              t.status,
+                              style: TextStyle(
+                                color: statusColor,
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                              ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
-                      // Format & Kuota Tag
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: _isPrivate
+                              ? const Color(0xFF10B981).withValues(alpha: 0.15)
+                              : AppColors.secondary.withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(
+                            color: _isPrivate
+                                ? const Color(0xFF10B981).withValues(alpha: 0.4)
+                                : AppColors.secondary.withValues(alpha: 0.4),
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              _isPrivate ? Icons.lock_rounded : Icons.public_rounded,
+                              size: 11,
+                              color: _isPrivate ? const Color(0xFF10B981) : AppColors.secondary,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              _isPrivate ? 'Privat (Lokal HP)' : 'Publik',
+                              style: TextStyle(
+                                color: _isPrivate ? const Color(0xFF10B981) : AppColors.secondary,
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  // Format & Kuota Tag (Menggunakan Wrap agar responsif di berbagai ukuran layar)
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 6,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.08),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          t.tipeGame,
+                          style: const TextStyle(
+                            color: AppColors.textSecondary,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                         decoration: BoxDecoration(
@@ -443,7 +538,7 @@ class _DetailTurnamenScreenState extends State<DetailTurnamenScreen>
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: Text(
-                          '${t.tipeGame} · ${t.kuota} Peserta · ${t.formatBracket} (${t.jumlahLeg == 2 ? "2 Leg Home & Away" : "1 Leg"})',
+                          '${t.kuota} Peserta · ${t.formatBracket} (${t.jumlahLeg == 2 ? "2 Leg Home & Away" : "1 Leg"})',
                           style: const TextStyle(
                             color: AppColors.primaryLight,
                             fontSize: 11,
@@ -471,7 +566,6 @@ class _DetailTurnamenScreenState extends State<DetailTurnamenScreen>
                       style: const TextStyle(color: AppColors.textMuted, fontSize: 12),
                     ),
                   ],
-                  const SizedBox(height: 12),
                   // Progress Bar Laga
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -503,6 +597,54 @@ class _DetailTurnamenScreenState extends State<DetailTurnamenScreen>
                       ),
                     ],
                   ),
+                  // === TOMBOL / BANNER AKHIRI TURNAMEN ===
+                  if (t.isLocked) ...[ 
+                    const SizedBox(height: 12),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: AppColors.success.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: AppColors.success.withValues(alpha: 0.3)),
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.lock_rounded, size: 14, color: AppColors.success),
+                          SizedBox(width: 6),
+                          Text(
+                            'Turnamen Telah Berakhir — Skor Dikunci',
+                            style: TextStyle(
+                              color: AppColors.success,
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ] else if (progress == 1.0 && totalCount > 0) ...[
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton.icon(
+                        onPressed: _akhiriTurnamen,
+                        icon: const Icon(Icons.flag_rounded, size: 16),
+                        label: const Text(
+                          'Akhiri Turnamen & Kunci Skor',
+                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.warning,
+                          foregroundColor: Colors.black,
+                          padding: const EdgeInsets.symmetric(vertical: 10),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -618,7 +760,7 @@ class _DetailTurnamenScreenState extends State<DetailTurnamenScreen>
             children: [
               // Header Table Bar
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
                 decoration: BoxDecoration(
                   color: const Color(0xFF0F172A),
                   borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
@@ -627,35 +769,43 @@ class _DetailTurnamenScreenState extends State<DetailTurnamenScreen>
                 child: const Row(
                   children: [
                     SizedBox(
-                      width: 32,
-                      child: Text('#', style: TextStyle(color: AppColors.textSecondary, fontWeight: FontWeight.bold, fontSize: 12)),
+                      width: 24,
+                      child: Text('#', style: TextStyle(color: AppColors.textSecondary, fontWeight: FontWeight.bold, fontSize: 11)),
                     ),
                     Expanded(
                       child: Text('KLUB / PESERTA', style: TextStyle(color: AppColors.textSecondary, fontWeight: FontWeight.bold, fontSize: 11, letterSpacing: 0.5)),
                     ),
                     SizedBox(
-                      width: 28,
-                      child: Text('M', textAlign: TextAlign.center, style: TextStyle(color: AppColors.textSecondary, fontWeight: FontWeight.bold, fontSize: 12)),
+                      width: 20,
+                      child: Text('M', textAlign: TextAlign.center, style: TextStyle(color: AppColors.textSecondary, fontWeight: FontWeight.bold, fontSize: 11)),
                     ),
                     SizedBox(
-                      width: 28,
-                      child: Text('W', textAlign: TextAlign.center, style: TextStyle(color: AppColors.success, fontWeight: FontWeight.bold, fontSize: 12)),
+                      width: 20,
+                      child: Text('W', textAlign: TextAlign.center, style: TextStyle(color: AppColors.success, fontWeight: FontWeight.bold, fontSize: 11)),
                     ),
                     SizedBox(
-                      width: 28,
-                      child: Text('D', textAlign: TextAlign.center, style: TextStyle(color: AppColors.secondary, fontWeight: FontWeight.bold, fontSize: 12)),
+                      width: 20,
+                      child: Text('D', textAlign: TextAlign.center, style: TextStyle(color: AppColors.secondary, fontWeight: FontWeight.bold, fontSize: 11)),
                     ),
                     SizedBox(
-                      width: 28,
-                      child: Text('L', textAlign: TextAlign.center, style: TextStyle(color: AppColors.error, fontWeight: FontWeight.bold, fontSize: 12)),
+                      width: 20,
+                      child: Text('L', textAlign: TextAlign.center, style: TextStyle(color: AppColors.error, fontWeight: FontWeight.bold, fontSize: 11)),
                     ),
                     SizedBox(
-                      width: 38,
-                      child: Text('+/-', textAlign: TextAlign.center, style: TextStyle(color: AppColors.textSecondary, fontWeight: FontWeight.bold, fontSize: 12)),
+                      width: 22,
+                      child: Text('GF', textAlign: TextAlign.center, style: TextStyle(color: AppColors.textSecondary, fontWeight: FontWeight.bold, fontSize: 11)),
                     ),
                     SizedBox(
-                      width: 42,
-                      child: Text('PTS', textAlign: TextAlign.center, style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
+                      width: 22,
+                      child: Text('GA', textAlign: TextAlign.center, style: TextStyle(color: AppColors.textSecondary, fontWeight: FontWeight.bold, fontSize: 11)),
+                    ),
+                    SizedBox(
+                      width: 26,
+                      child: Text('GD', textAlign: TextAlign.center, style: TextStyle(color: AppColors.textSecondary, fontWeight: FontWeight.bold, fontSize: 11)),
+                    ),
+                    SizedBox(
+                      width: 30,
+                      child: Text('PTS', textAlign: TextAlign.center, style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 11)),
                     ),
                   ],
                 ),
@@ -674,45 +824,45 @@ class _DetailTurnamenScreenState extends State<DetailTurnamenScreen>
                 if (rank == 1) {
                   rowBgColor = const Color(0xFFFFD700).withValues(alpha: 0.05);
                   rankWidget = Container(
-                    width: 24,
-                    height: 24,
+                    width: 20,
+                    height: 20,
                     alignment: Alignment.center,
                     decoration: const BoxDecoration(
                       gradient: LinearGradient(colors: [Color(0xFFFFD700), Color(0xFFF59E0B)]),
                       shape: BoxShape.circle,
                     ),
-                    child: const Text('1', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 12)),
+                    child: const Text('1', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 11)),
                   );
                 } else if (rank == 2) {
                   rowBgColor = const Color(0xFFC0C0C0).withValues(alpha: 0.03);
                   rankWidget = Container(
-                    width: 24,
-                    height: 24,
+                    width: 20,
+                    height: 20,
                     alignment: Alignment.center,
                     decoration: const BoxDecoration(
                       gradient: LinearGradient(colors: [Color(0xFFE2E8F0), Color(0xFF94A3B8)]),
                       shape: BoxShape.circle,
                     ),
-                    child: const Text('2', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 12)),
+                    child: const Text('2', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 11)),
                   );
                 } else if (rank == 3) {
                   rowBgColor = const Color(0xFFCD7F32).withValues(alpha: 0.03);
                   rankWidget = Container(
-                    width: 24,
-                    height: 24,
+                    width: 20,
+                    height: 20,
                     alignment: Alignment.center,
                     decoration: const BoxDecoration(
                       gradient: LinearGradient(colors: [Color(0xFFF97316), Color(0xFFB45309)]),
                       shape: BoxShape.circle,
                     ),
-                    child: const Text('3', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
+                    child: const Text('3', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 11)),
                   );
                 } else {
-                  rankWidget = Text('$rank', style: const TextStyle(color: AppColors.textSecondary, fontWeight: FontWeight.w600, fontSize: 12));
+                  rankWidget = Text('$rank', textAlign: TextAlign.center, style: const TextStyle(color: AppColors.textSecondary, fontWeight: FontWeight.w600, fontSize: 11));
                 }
 
                 return Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
                   decoration: BoxDecoration(
                     color: rowBgColor ?? (index.isEven ? Colors.white.withValues(alpha: 0.015) : Colors.transparent),
                     borderRadius: isLast ? const BorderRadius.vertical(bottom: Radius.circular(16)) : null,
@@ -722,7 +872,7 @@ class _DetailTurnamenScreenState extends State<DetailTurnamenScreen>
                     children: [
                       // Posisi
                       SizedBox(
-                        width: 32,
+                        width: 24,
                         child: rankWidget,
                       ),
                       // Nama Peserta / Tim
@@ -732,7 +882,7 @@ class _DetailTurnamenScreenState extends State<DetailTurnamenScreen>
                           style: TextStyle(
                             color: rank == 1 ? const Color(0xFFFFD700) : AppColors.textPrimary,
                             fontWeight: rank <= 3 ? FontWeight.bold : FontWeight.w600,
-                            fontSize: 13,
+                            fontSize: 12,
                           ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
@@ -740,64 +890,82 @@ class _DetailTurnamenScreenState extends State<DetailTurnamenScreen>
                       ),
                       // Main
                       SizedBox(
-                        width: 28,
+                        width: 20,
                         child: Text(
                           '${item.main}',
                           textAlign: TextAlign.center,
-                          style: const TextStyle(color: AppColors.textPrimary, fontSize: 12, fontWeight: FontWeight.w500),
+                          style: const TextStyle(color: AppColors.textPrimary, fontSize: 11, fontWeight: FontWeight.w500),
                         ),
                       ),
                       // Menang (W)
                       SizedBox(
-                        width: 28,
+                        width: 20,
                         child: Text(
                           '${item.menang}',
                           textAlign: TextAlign.center,
-                          style: const TextStyle(color: AppColors.success, fontWeight: FontWeight.bold, fontSize: 12),
+                          style: const TextStyle(color: AppColors.success, fontWeight: FontWeight.bold, fontSize: 11),
                         ),
                       ),
                       // Seri (D)
                       SizedBox(
-                        width: 28,
+                        width: 20,
                         child: Text(
                           '${item.seri}',
                           textAlign: TextAlign.center,
-                          style: const TextStyle(color: AppColors.secondary, fontWeight: FontWeight.w600, fontSize: 12),
+                          style: const TextStyle(color: AppColors.secondary, fontWeight: FontWeight.w600, fontSize: 11),
                         ),
                       ),
                       // Kalah (L)
                       SizedBox(
-                        width: 28,
+                        width: 20,
                         child: Text(
                           '${item.kalah}',
                           textAlign: TextAlign.center,
-                          style: const TextStyle(color: AppColors.error, fontWeight: FontWeight.w600, fontSize: 12),
+                          style: const TextStyle(color: AppColors.error, fontWeight: FontWeight.w600, fontSize: 11),
                         ),
                       ),
-                      // Selisih Skor (+/-)
+                      // Gol Memasukkan (GF)
                       SizedBox(
-                        width: 38,
+                        width: 22,
+                        child: Text(
+                          '${item.gm}',
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(color: AppColors.textPrimary, fontSize: 11, fontWeight: FontWeight.w500),
+                        ),
+                      ),
+                      // Gol Kemasukan (GA)
+                      SizedBox(
+                        width: 22,
+                        child: Text(
+                          '${item.gk}',
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(color: AppColors.textMuted, fontSize: 11, fontWeight: FontWeight.w500),
+                        ),
+                      ),
+                      // Selisih Gol (GD)
+                      SizedBox(
+                        width: 26,
                         child: Text(
                           item.sg > 0 ? '+${item.sg}' : '${item.sg}',
                           textAlign: TextAlign.center,
                           style: TextStyle(
                             color: item.sg > 0 ? AppColors.success : (item.sg < 0 ? AppColors.error : AppColors.textSecondary),
                             fontWeight: FontWeight.w600,
-                            fontSize: 12,
+                            fontSize: 11,
                           ),
                         ),
                       ),
                       // PTS
                       SizedBox(
-                        width: 42,
+                        width: 30,
                         child: Container(
-                          padding: const EdgeInsets.symmetric(vertical: 3),
+                          padding: const EdgeInsets.symmetric(vertical: 2),
                           decoration: BoxDecoration(
                             gradient: rank == 1
                                 ? const LinearGradient(colors: [Color(0xFF6366F1), Color(0xFF4F46E5)])
                                 : null,
                             color: rank != 1 ? AppColors.primary.withValues(alpha: 0.2) : null,
-                            borderRadius: BorderRadius.circular(6),
+                            borderRadius: BorderRadius.circular(5),
                           ),
                           child: Text(
                             '${item.poin}',
@@ -805,7 +973,7 @@ class _DetailTurnamenScreenState extends State<DetailTurnamenScreen>
                             style: const TextStyle(
                               color: Colors.white,
                               fontWeight: FontWeight.bold,
-                              fontSize: 13,
+                              fontSize: 12,
                             ),
                           ),
                         ),
@@ -841,8 +1009,9 @@ class _DetailTurnamenScreenState extends State<DetailTurnamenScreen>
                 ],
               ),
               SizedBox(height: 8),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              Wrap(
+                spacing: 10,
+                runSpacing: 4,
                 children: [
                   Text('• M = Main', style: TextStyle(color: AppColors.textSecondary, fontSize: 11)),
                   Text('• W = Menang (3 Poin)', style: TextStyle(color: AppColors.success, fontSize: 11, fontWeight: FontWeight.w600)),
@@ -850,10 +1019,16 @@ class _DetailTurnamenScreenState extends State<DetailTurnamenScreen>
                   Text('• L = Kalah (0 Poin)', style: TextStyle(color: AppColors.error, fontSize: 11, fontWeight: FontWeight.w600)),
                 ],
               ),
-              SizedBox(height: 4),
-              Text(
-                '• +/- = Selisih Skor Masuk vs Kemasukan | PTS = Total Poin',
-                style: TextStyle(color: AppColors.textMuted, fontSize: 11),
+              SizedBox(height: 6),
+              Wrap(
+                spacing: 10,
+                runSpacing: 4,
+                children: [
+                  Text('• GF = Gol Masuk', style: TextStyle(color: AppColors.textSecondary, fontSize: 11)),
+                  Text('• GA = Gol Kebobolan', style: TextStyle(color: AppColors.textSecondary, fontSize: 11)),
+                  Text('• GD = Selisih Gol (GF - GA)', style: TextStyle(color: AppColors.textSecondary, fontSize: 11)),
+                  Text('• PTS = Total Poin', style: TextStyle(color: AppColors.primaryLight, fontSize: 11, fontWeight: FontWeight.bold)),
+                ],
               ),
             ],
           ),
@@ -927,6 +1102,7 @@ class _DetailTurnamenScreenState extends State<DetailTurnamenScreen>
     final isFinished = match.status == 'Selesai';
     final isP1Winner = isFinished && match.skorPeserta1 > match.skorPeserta2;
     final isP2Winner = isFinished && match.skorPeserta2 > match.skorPeserta1;
+    final isLocked = _turnamen?.isLocked == true;
 
     Color badgeColor = AppColors.textMuted;
     if (match.status == 'Berlangsung') badgeColor = AppColors.secondary;
@@ -938,7 +1114,11 @@ class _DetailTurnamenScreenState extends State<DetailTurnamenScreen>
         color: const Color(0xFF1E293B),
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: isFinished ? AppColors.success.withValues(alpha: 0.2) : Colors.white.withValues(alpha: 0.06),
+          color: isLocked
+              ? Colors.white.withValues(alpha: 0.04)
+              : isFinished
+                  ? AppColors.success.withValues(alpha: 0.2)
+                  : Colors.white.withValues(alpha: 0.06),
         ),
         boxShadow: [
           BoxShadow(
@@ -982,7 +1162,10 @@ class _DetailTurnamenScreenState extends State<DetailTurnamenScreen>
                           ),
                         ),
                         const SizedBox(width: 6),
-                        const Icon(Icons.edit_note_rounded, size: 16, color: AppColors.secondary),
+                        if (isLocked)
+                          const Icon(Icons.lock_rounded, size: 14, color: AppColors.textMuted)
+                        else
+                          const Icon(Icons.edit_note_rounded, size: 16, color: AppColors.secondary),
                       ],
                     ),
                   ],

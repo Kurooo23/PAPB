@@ -18,7 +18,7 @@ class DatabaseHelper {
 
     return openDatabase(
       path,
-      version: 4,
+      version: 6,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
       onConfigure: (db) async {
@@ -26,6 +26,7 @@ class DatabaseHelper {
       },
     );
   }
+
 
   Future<void> _onCreate(Database db, int version) async {
     await db.execute('''
@@ -39,7 +40,9 @@ class DatabaseHelper {
         tanggal_mulai  TEXT NOT NULL,
         kuota          INTEGER NOT NULL,
         status         TEXT NOT NULL DEFAULT 'Akan Datang',
-        is_private     INTEGER NOT NULL DEFAULT 1
+        is_private     INTEGER NOT NULL DEFAULT 1,
+        is_locked      INTEGER NOT NULL DEFAULT 0,
+        email_user     TEXT NOT NULL DEFAULT ''
       )
     ''');
 
@@ -83,13 +86,17 @@ class DatabaseHelper {
   }
 
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
+    // v2: migrasi aman, tambah kolom baru tanpa hapus data
     if (oldVersion < 2) {
-      await db.execute('DROP TABLE IF EXISTS user_session');
-      await db.execute('DROP TABLE IF EXISTS pertandingan');
-      await db.execute('DROP TABLE IF EXISTS peserta');
-      await db.execute('DROP TABLE IF EXISTS turnamen');
-      await _onCreate(db, newVersion);
-      return;
+      try {
+        await db.execute("ALTER TABLE turnamen ADD COLUMN tipe_game TEXT NOT NULL DEFAULT 'E-Sports'");
+      } catch (_) {}
+      try {
+        await db.execute("ALTER TABLE turnamen ADD COLUMN jumlah_leg INTEGER NOT NULL DEFAULT 1");
+      } catch (_) {}
+      try {
+        await db.execute("ALTER TABLE turnamen ADD COLUMN is_private INTEGER NOT NULL DEFAULT 1");
+      } catch (_) {}
     }
 
     if (oldVersion < 3) {
@@ -118,7 +125,21 @@ class DatabaseHelper {
         ''');
       } catch (_) {}
     }
+
+    if (oldVersion < 5) {
+      try {
+        await db.execute("ALTER TABLE turnamen ADD COLUMN is_locked INTEGER NOT NULL DEFAULT 0");
+      } catch (_) {}
+    }
+
+    // v6: isolasi turnamen per akun user
+    if (oldVersion < 6) {
+      try {
+        await db.execute("ALTER TABLE turnamen ADD COLUMN email_user TEXT NOT NULL DEFAULT ''");
+      } catch (_) {}
+    }
   }
+
 
   // === MANAJEMEN SESI USER LOKAL (OFFLINE) ===
   Future<void> saveUserSession(Map<String, dynamic> user, {String? token}) async {

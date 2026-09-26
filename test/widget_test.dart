@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:app_papb/data/models/turnamen_model.dart';
-import 'package:app_papb/data/models/peserta_model.dart';
-import 'package:app_papb/data/models/pertandingan_model.dart';
+import 'package:rivnet/data/models/turnamen_model.dart';
+import 'package:rivnet/data/models/peserta_model.dart';
+import 'package:rivnet/data/models/pertandingan_model.dart';
 
 void main() {
   group('TurnamenModel Tests', () {

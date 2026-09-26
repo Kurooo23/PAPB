@@ -1,4 +1,4 @@
-package com.example.app_papb
+package com.rivnet
 
 import io.flutter.embedding.android.FlutterActivity
 

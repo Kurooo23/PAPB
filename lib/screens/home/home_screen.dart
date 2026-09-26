@@ -10,6 +10,7 @@ import '../../data/services/local_tournament_service.dart';
 import '../auth/login_screen.dart';
 import '../turnamen/buat_turnamen_screen.dart';
 import '../turnamen/detail_turnamen_screen.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 class HomeScreen extends StatefulWidget {
   final Map<String, dynamic>? user;
@@ -54,15 +55,12 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _loadUserSession() async {
-    if (_currentUser == null) {
-      final session = await DatabaseHelper.instance.getUserSession();
-      if (session != null && mounted) {
-        setState(() {
-          _currentUser = session;
-        });
-      }
-    } else {
-      await DatabaseHelper.instance.saveUserSession(_currentUser!);
+    final session = await DatabaseHelper.instance.getUserSession();
+    if (session != null && mounted) {
+      setState(() {
+        _currentUser = session;
+      });
+      _loadTournaments();
     }
   }
 
@@ -85,12 +83,17 @@ class _HomeScreenState extends State<HomeScreen> {
       // 1. Ambil Turnamen Privat dari Database SQLite Lokal HP
       List<TurnamenModel> localData = [];
       try {
+        final emailUser = _currentUser?['email']?.toString() ?? '';
         if (_currentNavIndex == 1) {
-          localData = await _localService.getRiwayatTurnamen(search: query);
+          localData = await _localService.getRiwayatTurnamen(
+            search: query,
+            emailUser: emailUser,
+          );
         } else {
           localData = await _localService.getTurnamenAktif(
             search: query,
             statusFilter: _selectedFilter,
+            emailUser: emailUser,
           );
         }
       } catch (e) {
@@ -318,17 +321,27 @@ class _HomeScreenState extends State<HomeScreen> {
           if (_currentUser != null) ...[
             TextButton(
               onPressed: () async {
+                const storage = FlutterSecureStorage();
+
+                await storage.delete(key: 'user_token');
                 await DatabaseHelper.instance.clearUserSession();
-                setState(() => _currentUser = null);
+
                 if (ctx.mounted) Navigator.pop(ctx);
-                if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Sesi login telah dibersihkan.'),
-                      backgroundColor: AppColors.warning,
-                    ),
-                  );
-                }
+
+                if (!mounted) return;
+
+                setState(() {
+                  _currentUser = null;
+                  _searchController.clear();
+                });
+                _loadTournaments();
+
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Anda telah keluar akun dan kembali ke mode tamu.'),
+                    backgroundColor: AppColors.primary,
+                  ),
+                );
               },
               child: const Text('Keluar Akun', style: TextStyle(color: AppColors.error)),
             ),
@@ -366,15 +379,14 @@ class _HomeScreenState extends State<HomeScreen> {
       appBar: AppBar(
         title: Row(
           children: [
-            Container(
-              padding: const EdgeInsets.all(6),
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: [AppColors.primary, AppColors.secondary],
-                ),
-                borderRadius: BorderRadius.circular(10),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: Image.asset(
+                'assets/icons/rivnet_logo.png',
+                width: 32,
+                height: 32,
+                fit: BoxFit.cover,
               ),
-              child: const Icon(Icons.sports_esports_rounded, color: Colors.white, size: 20),
             ),
             const SizedBox(width: 10),
             Text(
@@ -400,16 +412,6 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             tooltip: _currentUser != null ? (_currentUser!['nickname']?.toString() ?? 'Profil') : 'Masuk',
             onPressed: _showUserProfileDialog,
-          ),
-          IconButton(
-            icon: const Icon(Icons.settings_ethernet_rounded, color: AppColors.textSecondary),
-            tooltip: 'Konfigurasi Server API',
-            onPressed: _showServerSettingsDialog,
-          ),
-          IconButton(
-            icon: const Icon(Icons.refresh_rounded, color: AppColors.textSecondary),
-            tooltip: 'Muat Ulang',
-            onPressed: _loadTournaments,
           ),
         ],
       ),
@@ -523,7 +525,51 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  void _promptLogin({required String title, required String message}) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.bgDarkSecondary,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            const Icon(Icons.lock_outline_rounded, color: AppColors.secondary, size: 22),
+            const SizedBox(width: 8),
+            Text(
+              title,
+              style: const TextStyle(color: AppColors.textPrimary, fontSize: 16, fontWeight: FontWeight.bold),
+            ),
+          ],
+        ),
+        content: Text(
+          message,
+          style: const TextStyle(color: AppColors.textSecondary, fontSize: 13, height: 1.4),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Batal', style: TextStyle(color: AppColors.textMuted)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary),
+            onPressed: () async {
+              Navigator.pop(ctx);
+              await Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const LoginScreen()),
+              );
+              _loadUserSession();
+            },
+            child: const Text('Login Sekarang', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildSearchBar() {
+    final isGuest = _currentUser == null;
+
     return Container(
       height: 48,
       decoration: BoxDecoration(
@@ -533,21 +579,63 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       child: TextField(
         controller: _searchController,
-        onChanged: (_) => _loadTournaments(),
+        readOnly: isGuest,
+        onTap: () {
+          if (isGuest) {
+            _promptLogin(
+              title: 'Login Diperlukan',
+              message: 'Fitur pencarian turnamen hanya dapat digunakan oleh pengguna yang telah login. Silakan masuk ke akun Anda.',
+            );
+          }
+        },
+        onChanged: (_) {
+          if (isGuest) {
+            _searchController.clear();
+            _promptLogin(
+              title: 'Login Diperlukan',
+              message: 'Fitur pencarian turnamen hanya dapat digunakan oleh pengguna yang telah login. Silakan masuk ke akun Anda.',
+            );
+            return;
+          }
+          _loadTournaments();
+        },
         style: const TextStyle(color: AppColors.textPrimary, fontSize: 14),
         decoration: InputDecoration(
-          hintText: _currentNavIndex == 0 ? 'Cari turnamen aktif...' : 'Cari riwayat turnamen...',
+          hintText: isGuest
+              ? 'Login untuk mencari turnamen...'
+              : (_currentNavIndex == 0 ? 'Cari turnamen aktif...' : 'Cari riwayat turnamen...'),
           hintStyle: const TextStyle(color: AppColors.textMuted, fontSize: 13),
-          prefixIcon: const Icon(Icons.search_rounded, color: AppColors.textMuted, size: 22),
-          suffixIcon: _searchController.text.isNotEmpty
-              ? IconButton(
-                  icon: const Icon(Icons.close_rounded, color: AppColors.textMuted, size: 18),
+          prefixIcon: Icon(
+            isGuest ? Icons.lock_outline_rounded : Icons.search_rounded,
+            color: isGuest ? AppColors.secondary : AppColors.textMuted,
+            size: 22,
+          ),
+          suffixIcon: isGuest
+              ? TextButton(
                   onPressed: () {
-                    _searchController.clear();
-                    _loadTournaments();
+                    _promptLogin(
+                      title: 'Login Diperlukan',
+                      message: 'Fitur pencarian turnamen hanya dapat digunakan oleh pengguna yang telah login. Silakan masuk ke akun Anda.',
+                    );
                   },
+                  child: const Text(
+                    'Login',
+                    style: TextStyle(
+                      color: AppColors.secondary,
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
                 )
-              : null,
+              : (_searchController.text.isNotEmpty
+                  ? IconButton(
+                      icon: const Icon(Icons.close_rounded, color: AppColors.textMuted, size: 18),
+                      onPressed: () {
+                        _searchController.clear();
+                        _loadTournaments();
+                      },
+                    )
+                  : null),
           border: InputBorder.none,
           contentPadding: const EdgeInsets.symmetric(vertical: 12),
         ),

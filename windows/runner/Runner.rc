@@ -89,13 +89,13 @@ BEGIN
     BEGIN
         BLOCK "040904e4"
         BEGIN
-            VALUE "CompanyName", "com.example" "\0"
-            VALUE "FileDescription", "app_papb" "\0"
+            VALUE "CompanyName", "com.rivnet" "\0"
+            VALUE "FileDescription", "RivNet" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
-            VALUE "InternalName", "app_papb" "\0"
-            VALUE "LegalCopyright", "Copyright (C) 2026 com.example. All rights reserved." "\0"
-            VALUE "OriginalFilename", "app_papb.exe" "\0"
-            VALUE "ProductName", "app_papb" "\0"
+            VALUE "InternalName", "rivnet" "\0"
+            VALUE "LegalCopyright", "Copyright (C) 2026 com.rivnet. All rights reserved." "\0"
+            VALUE "OriginalFilename", "rivnet.exe" "\0"
+            VALUE "ProductName", "RivNet" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END

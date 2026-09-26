@@ -394,6 +394,7 @@ class LocalTournamentService {
     required DateTime tanggalMulai,
     required int kuota,
     required List<String> peserta,
+    String emailUser = '',
   }) async {
     final db = await _dbHelper.database;
     final idTurnamen = _uuid.v4();
@@ -411,6 +412,7 @@ class LocalTournamentService {
       kuota: kuota,
       status: status,
       isPrivate: true,
+      emailUser: emailUser,
     );
 
     await db.transaction((txn) async {
@@ -456,10 +458,10 @@ class LocalTournamentService {
   // ==========================================================
   // 2. GET Semua Turnamen Privat
   // ==========================================================
-  Future<List<TurnamenModel>> getAllTurnamen({String? search, String? status}) async {
+  Future<List<TurnamenModel>> getAllTurnamen({String? search, String? status, String emailUser = ''}) async {
     final db = await _dbHelper.database;
-    String whereClause = 'is_private = 1';
-    final List<dynamic> whereArgs = [];
+    String whereClause = 'is_private = 1 AND email_user = ?';
+    final List<dynamic> whereArgs = [emailUser];
 
     if (search != null && search.trim().isNotEmpty) {
       whereClause += ' AND nama_turnamen LIKE ?';
@@ -474,7 +476,7 @@ class LocalTournamentService {
     final results = await db.query(
       'turnamen',
       where: whereClause,
-      whereArgs: whereArgs.isNotEmpty ? whereArgs : null,
+      whereArgs: whereArgs,
       orderBy: 'tanggal_mulai DESC',
     );
 
@@ -484,10 +486,10 @@ class LocalTournamentService {
   // ==========================================================
   // 3. GET Turnamen Privat Aktif
   // ==========================================================
-  Future<List<TurnamenModel>> getTurnamenAktif({String? search, String? statusFilter}) async {
+  Future<List<TurnamenModel>> getTurnamenAktif({String? search, String? statusFilter, String emailUser = ''}) async {
     final db = await _dbHelper.database;
-    String whereClause = "is_private = 1 AND status != 'Selesai'";
-    final List<dynamic> whereArgs = [];
+    String whereClause = "is_private = 1 AND status != 'Selesai' AND email_user = ?";
+    final List<dynamic> whereArgs = [emailUser];
 
     if (search != null && search.trim().isNotEmpty) {
       whereClause += ' AND nama_turnamen LIKE ?';
@@ -502,7 +504,7 @@ class LocalTournamentService {
     final results = await db.query(
       'turnamen',
       where: whereClause,
-      whereArgs: whereArgs.isNotEmpty ? whereArgs : null,
+      whereArgs: whereArgs,
       orderBy: 'tanggal_mulai ASC',
     );
 
@@ -512,10 +514,10 @@ class LocalTournamentService {
   // ==========================================================
   // 4. GET Riwayat Turnamen Privat (Selesai)
   // ==========================================================
-  Future<List<TurnamenModel>> getRiwayatTurnamen({String? search}) async {
+  Future<List<TurnamenModel>> getRiwayatTurnamen({String? search, String emailUser = ''}) async {
     final db = await _dbHelper.database;
-    String whereClause = "is_private = 1 AND status = 'Selesai'";
-    final List<dynamic> whereArgs = [];
+    String whereClause = "is_private = 1 AND status = 'Selesai' AND email_user = ?";
+    final List<dynamic> whereArgs = [emailUser];
 
     if (search != null && search.trim().isNotEmpty) {
       whereClause += ' AND nama_turnamen LIKE ?';
@@ -525,7 +527,7 @@ class LocalTournamentService {
     final results = await db.query(
       'turnamen',
       where: whereClause,
-      whereArgs: whereArgs.isNotEmpty ? whereArgs : null,
+      whereArgs: whereArgs,
       orderBy: 'tanggal_mulai DESC',
     );
 
@@ -591,6 +593,7 @@ class LocalTournamentService {
         'deskripsi': turnamen.deskripsi,
         'tipe_game': turnamen.tipeGame,
         'status': turnamen.status,
+        'is_locked': turnamen.isLocked ? 1 : 0,
       },
       where: 'id_turnamen = ?',
       whereArgs: [turnamen.idTurnamen],
@@ -690,24 +693,8 @@ class LocalTournamentService {
         }
       }
 
-      // 4. Cek apakah seluruh pertandingan dalam turnamen ini sudah selesai
-      final allMatches = await txn.query(
-        'pertandingan',
-        where: 'id_turnamen = ?',
-        whereArgs: [currentMatch.idTurnamen],
-      );
-
-      final isAllFinished =
-          allMatches.isNotEmpty && allMatches.every((m) => m['status'] == 'Selesai');
-
-      if (isAllFinished) {
-        await txn.update(
-          'turnamen',
-          {'status': 'Selesai'},
-          where: 'id_turnamen = ?',
-          whereArgs: [currentMatch.idTurnamen],
-        );
-      }
+      // Catatan: Status 'Selesai' dan kunci skor turnamen sekarang dilakukan 
+      // secara manual melalui konfirmasi tombol 'Akhiri Turnamen'.
     });
 
     final updated = await db.rawQuery('''

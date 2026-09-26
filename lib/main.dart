@@ -1,9 +1,15 @@
+// lib/main.dart
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+
 import 'core/theme/app_colors.dart';
+import 'data/database_helper.dart';
 import 'screens/home/home_screen.dart';
 
-void main() {
+const _storage = FlutterSecureStorage();
+
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   SystemChrome.setSystemUIOverlayStyle(
@@ -15,11 +21,19 @@ void main() {
     ),
   );
 
-  runApp(const MyApp());
+  final token = await _storage.read(key: 'user_token');
+  final user = await DatabaseHelper.instance.getUserSession();
+
+  final isLoggedIn =
+      token != null && token.isNotEmpty && user != null;
+
+  runApp(MyApp(initialUser: isLoggedIn ? user : null));
 }
 
 class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+  final Map<String, dynamic>? initialUser;
+
+  const MyApp({super.key, this.initialUser});
 
   @override
   Widget build(BuildContext context) {
@@ -37,8 +51,7 @@ class MyApp extends StatelessWidget {
         ),
         fontFamily: 'Roboto',
       ),
-      // ✅ Halaman utama langsung diarahkan ke HomeScreen
-      home: const HomeScreen(),
+      home: HomeScreen(user: initialUser),
     );
   }
 }
