@@ -29,7 +29,13 @@ class _BuatTurnamenScreenState extends State<BuatTurnamenScreen> {
   int _kuota = 4;
 
   final List<TextEditingController> _pesertaControllers = [];
+  // Nama tim, terpisah dari nama peserta di atas. Cuma ditampilkan/dipakai
+  // saat _shouldSplitPesertaTim true (Online + Sepak Bola/Futsal); untuk
+  // kombinasi lain isinya diabaikan.
+  final List<TextEditingController> _timControllers = [];
   bool _isLoading = false;
+
+  bool get _shouldSplitPesertaTim => !_isPrivate && _tipeGame == 'Sepak Bola / Futsal';
 
   final ApiService _apiService = ApiService.instance;
   final LocalTournamentService _localService = LocalTournamentService.instance;
@@ -146,10 +152,11 @@ class _BuatTurnamenScreenState extends State<BuatTurnamenScreen> {
     while (_pesertaControllers.length < count) {
       final index = _pesertaControllers.length + 1;
       _pesertaControllers.add(TextEditingController(text: 'Peserta $index'));
+      _timControllers.add(TextEditingController());
     }
     while (_pesertaControllers.length > count) {
-      final controller = _pesertaControllers.removeLast();
-      controller.dispose();
+      _pesertaControllers.removeLast().dispose();
+      _timControllers.removeLast().dispose();
     }
   }
 
@@ -266,7 +273,11 @@ class _BuatTurnamenScreenState extends State<BuatTurnamenScreen> {
 
     if (result != null) {
       setState(() {
-        _pesertaControllers[index].text = result.clubName;
+        if (_shouldSplitPesertaTim) {
+          _timControllers[index].text = result.clubName;
+        } else {
+          _pesertaControllers[index].text = result.clubName;
+        }
         _lastSelectedLeague = result.leagueName;
         _lastSelectedDivision = result.divisionName;
       });
@@ -279,12 +290,13 @@ class _BuatTurnamenScreenState extends State<BuatTurnamenScreen> {
       orElse: () => _gameTypeList[0],
     );
     final List<String> sampleTeams = List<String>.from(currentGameObj['sample'] ?? []);
+    final targets = _shouldSplitPesertaTim ? _timControllers : _pesertaControllers;
 
-    for (int i = 0; i < _pesertaControllers.length; i++) {
+    for (int i = 0; i < targets.length; i++) {
       if (i < sampleTeams.length) {
-        _pesertaControllers[i].text = sampleTeams[i];
-      } else {
-        _pesertaControllers[i].text = 'Peserta ${i + 1}';
+        targets[i].text = sampleTeams[i];
+      } else if (!_shouldSplitPesertaTim) {
+        targets[i].text = 'Peserta ${i + 1}';
       }
     }
     setState(() {});
@@ -296,6 +308,9 @@ class _BuatTurnamenScreenState extends State<BuatTurnamenScreen> {
     _deskripsiController.dispose();
     _customGameController.dispose();
     for (final controller in _pesertaControllers) {
+      controller.dispose();
+    }
+    for (final controller in _timControllers) {
       controller.dispose();
     }
     super.dispose();
@@ -324,6 +339,10 @@ class _BuatTurnamenScreenState extends State<BuatTurnamenScreen> {
             : _pesertaControllers[i].text.trim();
         pesertaList.add(nama);
       }
+
+      final List<String>? timList = _shouldSplitPesertaTim
+          ? _timControllers.map((c) => c.text.trim()).toList()
+          : null;
 
       final effectiveGameType = _tipeGame == 'Lainnya (Custom)' && _customGameController.text.trim().isNotEmpty
           ? _customGameController.text.trim()
@@ -363,6 +382,7 @@ class _BuatTurnamenScreenState extends State<BuatTurnamenScreen> {
           tanggalMulai: DateTime.now(), // Otomatis dicatat sebagai timestamp riwayat
           kuota: _kuota,
           peserta: pesertaList,
+          namaTim: timList,
         );
       }
 
@@ -494,13 +514,24 @@ class _BuatTurnamenScreenState extends State<BuatTurnamenScreen> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  _buildSectionTitle('Daftar Peserta (${_pesertaControllers.length})'),
+                  Expanded(
+                    child: Text(
+                      'Daftar Peserta (${_pesertaControllers.length})',
+                      style: const TextStyle(
+                        color: AppColors.textPrimary,
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
                   TextButton.icon(
                     onPressed: _fillSampleNames,
                     icon: const Icon(Icons.auto_awesome_rounded, size: 16, color: AppColors.secondary),
                     label: Text(
                       'Isi Contoh $_tipeGame',
                       style: const TextStyle(color: AppColors.secondary, fontSize: 13),
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
                 ],
@@ -508,69 +539,109 @@ class _BuatTurnamenScreenState extends State<BuatTurnamenScreen> {
               const SizedBox(height: 8),
               ...List.generate(_pesertaControllers.length, (index) {
                 final isFootball = _tipeGame == 'Sepak Bola / Futsal';
+                final splitMode = _shouldSplitPesertaTim;
+                final pilihTimButton = SizedBox(
+                  height: 48,
+                  child: ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF1E293B),
+                      foregroundColor: AppColors.secondary,
+                      padding: const EdgeInsets.symmetric(horizontal: 10),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        side: BorderSide(color: AppColors.secondary.withValues(alpha: 0.4)),
+                      ),
+                    ),
+                    onPressed: () => _openFootballTeamPicker(index),
+                    icon: const Icon(Icons.sports_soccer_rounded, size: 16),
+                    label: const Text(
+                      'Pilih Tim',
+                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                );
+
                 return Padding(
                   padding: const EdgeInsets.only(bottom: 10),
-                  child: Row(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Expanded(
-                        child: TextFormField(
-                          controller: _pesertaControllers[index],
-                          style: const TextStyle(color: AppColors.textPrimary, fontSize: 14),
-                          decoration: InputDecoration(
-                            filled: true,
-                            fillColor: AppColors.bgCard,
-                            prefixIcon: Padding(
-                              padding: const EdgeInsets.all(12),
-                              child: CircleAvatar(
-                                radius: 12,
-                                backgroundColor: AppColors.primary.withValues(alpha: 0.3),
-                                child: Text(
-                                  '${index + 1}',
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.bold,
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextFormField(
+                              controller: _pesertaControllers[index],
+                              style: const TextStyle(color: AppColors.textPrimary, fontSize: 14),
+                              decoration: InputDecoration(
+                                filled: true,
+                                fillColor: AppColors.bgCard,
+                                prefixIcon: Padding(
+                                  padding: const EdgeInsets.all(12),
+                                  child: CircleAvatar(
+                                    radius: 12,
+                                    backgroundColor: AppColors.primary.withValues(alpha: 0.3),
+                                    child: Text(
+                                      '${index + 1}',
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
                                   ),
+                                ),
+                                hintText: splitMode
+                                    ? 'Nama Pemain ${index + 1}'
+                                    : 'Nama Tim / Pemain ${index + 1}',
+                                hintStyle: const TextStyle(color: AppColors.textMuted, fontSize: 13),
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                  borderSide: BorderSide.none,
+                                ),
+                                contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                              ),
+                              validator: (val) {
+                                if (val == null || val.trim().isEmpty) {
+                                  return 'Nama peserta ${index + 1} tidak boleh kosong';
+                                }
+                                return null;
+                              },
+                            ),
+                          ),
+                          if (isFootball && !splitMode) ...[
+                            const SizedBox(width: 8),
+                            pilihTimButton,
+                          ],
+                        ],
+                      ),
+                      if (splitMode) ...[
+                        const SizedBox(height: 6),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: TextFormField(
+                                controller: _timControllers[index],
+                                style: const TextStyle(color: AppColors.textPrimary, fontSize: 14),
+                                decoration: InputDecoration(
+                                  filled: true,
+                                  fillColor: AppColors.bgCard,
+                                  prefixIcon: const Padding(
+                                    padding: EdgeInsets.all(14),
+                                    child: Icon(Icons.shield_outlined, size: 18, color: AppColors.textMuted),
+                                  ),
+                                  hintText: 'Nama Tim ${index + 1} (opsional)',
+                                  hintStyle: const TextStyle(color: AppColors.textMuted, fontSize: 13),
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                    borderSide: BorderSide.none,
+                                  ),
+                                  contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                                 ),
                               ),
                             ),
-                            hintText: 'Nama Tim / Pemain ${index + 1}',
-                            hintStyle: const TextStyle(color: AppColors.textMuted, fontSize: 13),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                              borderSide: BorderSide.none,
-                            ),
-                            contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                          ),
-                          validator: (val) {
-                            if (val == null || val.trim().isEmpty) {
-                              return 'Nama peserta ${index + 1} tidak boleh kosong';
-                            }
-                            return null;
-                          },
-                        ),
-                      ),
-                      if (isFootball) ...[
-                        const SizedBox(width: 8),
-                        SizedBox(
-                          height: 48,
-                          child: ElevatedButton.icon(
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF1E293B),
-                              foregroundColor: AppColors.secondary,
-                              padding: const EdgeInsets.symmetric(horizontal: 10),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                                side: BorderSide(color: AppColors.secondary.withValues(alpha: 0.4)),
-                              ),
-                            ),
-                            onPressed: () => _openFootballTeamPicker(index),
-                            icon: const Icon(Icons.sports_soccer_rounded, size: 16),
-                            label: const Text(
-                              'Pilih Tim',
-                              style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
-                            ),
-                          ),
+                            const SizedBox(width: 8),
+                            pilihTimButton,
+                          ],
                         ),
                       ],
                     ],

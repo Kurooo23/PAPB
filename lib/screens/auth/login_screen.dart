@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+
 import '../../data/database_helper.dart';
 import '../../services/auth_service.dart';
 import '../../data/services/google_sign_in_service.dart';
@@ -176,14 +177,10 @@ class _LoginScreenState extends State<LoginScreen> {
   /// tidak ada dua proses login bersamaan.
   _LoginMethod? _activeMethod;
 
-  Future<void> _handleLogin(
-      String email,
-      String password,
-      bool rememberMe,
-      ) {
+  Future<void> _handleLogin(String email, String password, bool rememberMe) {
     return _runLogin(
       _LoginMethod.email,
-          () => AuthService.login(email: email, password: password),
+      () => AuthService.login(email: email, password: password),
     );
   }
 
@@ -199,9 +196,9 @@ class _LoginScreenState extends State<LoginScreen> {
   /// Alur yang sama untuk semua metode login: minta hasil ke server, simpan
   /// token dan sesi, lalu masuk ke beranda.
   Future<void> _runLogin(
-      _LoginMethod method,
-      Future<dynamic> Function() request,
-      ) async {
+    _LoginMethod method,
+    Future<dynamic> Function() request,
+  ) async {
     setState(() => _activeMethod = method);
 
     try {
@@ -212,7 +209,18 @@ class _LoginScreenState extends State<LoginScreen> {
       if (token == null || token.isEmpty) {
         throw Exception('Token login tidak diterima dari server.');
       }
-      await const FlutterSecureStorage().write(key: 'user_token', value: token);
+      const storage = FlutterSecureStorage();
+      await storage.write(key: 'user_token', value: token);
+
+      final resultData = result['data'];
+      final refreshToken =
+          result['refresh_token'] ??
+          (resultData is Map ? resultData['refresh_token'] : null);
+      if (refreshToken is String && refreshToken.isNotEmpty) {
+        await storage.write(key: 'refresh_token', value: refreshToken);
+      } else {
+        await storage.delete(key: 'refresh_token');
+      }
 
       final user = _extractUser(result);
       if (user == null) {
@@ -233,14 +241,15 @@ class _LoginScreenState extends State<LoginScreen> {
       Navigator.pushAndRemoveUntil(
         context,
         MaterialPageRoute(builder: (_) => HomeScreen(user: user)),
-            (route) => false,
+        (route) => false,
       );
     } catch (e) {
       if (!mounted) return;
       final message = e.toString().replaceFirst('Exception: ', '');
       // Akun Google selalu sudah terverifikasi, jadi pesan verifikasi email
       // hanya berlaku untuk login email.
-      final isUnverified = method == _LoginMethod.email &&
+      final isUnverified =
+          method == _LoginMethod.email &&
           message.toLowerCase().contains('verifikasi');
 
       _showFeedback(
@@ -326,8 +335,11 @@ class _LoginScreenState extends State<LoginScreen> {
     // Logo dan judul sekitar 150 dp, form sekitar 450 dp, ajakan daftar
     // sekitar 50 dp. Dengan perbandingan ini sisa ruang di atas dan bawah
     // tiap baris kurang lebih sama.
-    final [headerHeight, formHeight, footerHeight] =
-    canvas.rows(const [2, 5, 1]);
+    final [headerHeight, formHeight, footerHeight] = canvas.rows(const [
+      2,
+      5,
+      1,
+    ]);
     // Kolom kanvas: margin : isi : margin, dipilih dari lebar layar.
     final columns = canvas.formColumns();
     final canGoBack = Navigator.canPop(context);
@@ -401,13 +413,13 @@ class _LoginHeader extends StatelessWidget {
           child: onBack == null
               ? null
               : IconButton(
-            icon: const Icon(
-              Icons.arrow_back_ios_new_rounded,
-              color: _LoginPalette.textPrimary,
-            ),
-            tooltip: 'Kembali',
-            onPressed: onBack,
-          ),
+                  icon: const Icon(
+                    Icons.arrow_back_ios_new_rounded,
+                    color: _LoginPalette.textPrimary,
+                  ),
+                  tooltip: 'Kembali',
+                  onPressed: onBack,
+                ),
         ),
         Expanded(
           child: Column(
@@ -436,7 +448,10 @@ class _LoginHeader extends StatelessWidget {
               const Text(
                 'Masuk ke akun turnamen Anda',
                 textAlign: TextAlign.center,
-                style: TextStyle(color: _LoginPalette.textSecondary, fontSize: 13),
+                style: TextStyle(
+                  color: _LoginPalette.textSecondary,
+                  fontSize: 13,
+                ),
               ),
             ],
           ),
@@ -515,8 +530,10 @@ class _LoginFormState extends State<_LoginForm> {
               icon: Icons.alternate_email_rounded,
               keyboardType: TextInputType.emailAddress,
               validator: (val) {
-                if (val == null || val.trim().isEmpty) return 'Email wajib diisi';
-                if (!val.trim().contains('@')) return 'Masukkan alamat email yang valid';
+                if (val == null || val.trim().isEmpty)
+                  return 'Email wajib diisi';
+                if (!val.trim().contains('@'))
+                  return 'Masukkan alamat email yang valid';
                 return null;
               },
             ),
@@ -529,7 +546,9 @@ class _LoginFormState extends State<_LoginForm> {
               obscureText: _obscurePassword,
               textInputAction: TextInputAction.done,
               suffixIcon: IconButton(
-                tooltip: _obscurePassword ? 'Tampilkan kata sandi' : 'Sembunyikan kata sandi',
+                tooltip: _obscurePassword
+                    ? 'Tampilkan kata sandi'
+                    : 'Sembunyikan kata sandi',
                 icon: Icon(
                   _obscurePassword
                       ? Icons.visibility_off_outlined
@@ -568,7 +587,10 @@ class _LoginFormState extends State<_LoginForm> {
                     ),
                     child: const Text(
                       'Lupa sandi?',
-                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                   ),
                 ],
@@ -583,28 +605,29 @@ class _LoginFormState extends State<_LoginForm> {
                 minimumSize: const Size.fromHeight(48),
                 backgroundColor: _LoginPalette.accent,
                 foregroundColor: _LoginPalette.bg,
-                disabledBackgroundColor:
-                _LoginPalette.accent.withValues(alpha: 0.5),
+                disabledBackgroundColor: _LoginPalette.accent.withValues(
+                  alpha: 0.5,
+                ),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(10),
                 ),
               ),
               child: widget.activeMethod == _LoginMethod.email
                   ? const SizedBox(
-                width: 20,
-                height: 20,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  color: Colors.black87,
-                ),
-              )
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.black87,
+                      ),
+                    )
                   : const Text(
-                'Masuk',
-                style: TextStyle(
-                  fontWeight: FontWeight.w600,
-                  fontSize: 15,
-                ),
-              ),
+                      'Masuk',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 15,
+                      ),
+                    ),
             ),
             SizedBox(height: s.dividerGap),
             const Row(
@@ -614,7 +637,10 @@ class _LoginFormState extends State<_LoginForm> {
                   padding: EdgeInsets.symmetric(horizontal: 12),
                   child: Text(
                     'atau',
-                    style: TextStyle(color: _LoginPalette.textMuted, fontSize: 12),
+                    style: TextStyle(
+                      color: _LoginPalette.textMuted,
+                      fontSize: 12,
+                    ),
                   ),
                 ),
                 Expanded(child: Divider(color: _LoginPalette.border)),
@@ -731,18 +757,26 @@ class _FormField extends StatelessWidget {
           keyboardType: keyboardType,
           textInputAction: textInputAction,
           validator: validator,
-          style: const TextStyle(color: _LoginPalette.textPrimary, fontSize: 14),
+          style: const TextStyle(
+            color: _LoginPalette.textPrimary,
+            fontSize: 14,
+          ),
           decoration: InputDecoration(
             hintText: hint,
-            hintStyle: const TextStyle(color: _LoginPalette.textMuted, fontSize: 14),
+            hintStyle: const TextStyle(
+              color: _LoginPalette.textMuted,
+              fontSize: 14,
+            ),
             // Bawaan Flutter cuma 1 baris, jadi pesan panjang terpotong.
             errorMaxLines: 2,
             prefixIcon: Icon(icon, color: _LoginPalette.textMuted, size: 20),
             suffixIcon: suffixIcon,
             filled: true,
             fillColor: _LoginPalette.bg,
-            contentPadding:
-            const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 14,
+              vertical: 12,
+            ),
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(10),
               borderSide: const BorderSide(color: _LoginPalette.border),
@@ -753,7 +787,10 @@ class _FormField extends StatelessWidget {
             ),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(10),
-              borderSide: const BorderSide(color: _LoginPalette.accent, width: 1.5),
+              borderSide: const BorderSide(
+                color: _LoginPalette.accent,
+                width: 1.5,
+              ),
             ),
             errorBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(10),
@@ -763,9 +800,15 @@ class _FormField extends StatelessWidget {
             // bawaan tema, bukan merah palet.
             focusedErrorBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(10),
-              borderSide: const BorderSide(color: _LoginPalette.error, width: 1.5),
+              borderSide: const BorderSide(
+                color: _LoginPalette.error,
+                width: 1.5,
+              ),
             ),
-            errorStyle: const TextStyle(color: _LoginPalette.error, fontSize: 12),
+            errorStyle: const TextStyle(
+              color: _LoginPalette.error,
+              fontSize: 12,
+            ),
           ),
         ),
       ],
@@ -775,6 +818,9 @@ class _FormField extends StatelessWidget {
 
 class _GoogleLoginButton extends StatelessWidget {
   const _GoogleLoginButton({required this.onPressed, required this.isLoading});
+
+  /// Spinner memakai ukuran yang sama supaya tombol tidak bergeser saat loading.
+  static const _googleLogoSize = 18.0;
 
   /// null berarti nonaktif karena ada login lain yang sedang berjalan.
   final VoidCallback? onPressed;
@@ -800,18 +846,29 @@ class _GoogleLoginButton extends StatelessWidget {
         children: [
           if (isLoading)
             const SizedBox(
-              width: 20,
-              height: 20,
+              width: _googleLogoSize,
+              height: _googleLogoSize,
               child: CircularProgressIndicator(
                 strokeWidth: 2,
                 color: _LoginPalette.textSecondary,
               ),
             )
           else
-            const Icon(
-              Icons.person_outline_rounded,
-              color: _LoginPalette.textMuted,
-              size: 20,
+            // Logo "G" resmi dari paket Sign in with Google Branding
+            // Guidelines. Warna dan bentuknya tidak boleh diubah, jadi logo
+            // tidak ikut diredupkan saat tombol nonaktif. Teks di sebelahnya
+            // sudah menjelaskan aksinya, jadi logo tidak dibaca pembaca layar.
+            Image.asset(
+              'assets/icons/google(1).png',
+              width: _googleLogoSize,
+              height: _googleLogoSize,
+              excludeFromSemantics: true,
+              // Kalau file logo belum ada, sisakan ruang kosong seukuran logo
+              // supaya tombol tidak rusak, dan catat penyebabnya di log.
+              errorBuilder: (context, error, stackTrace) {
+                debugPrint('Logo Google tidak bisa dimuat: $error');
+                return const SizedBox.square(dimension: _googleLogoSize);
+              },
             ),
           const SizedBox(width: 10),
           Flexible(
@@ -886,7 +943,9 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
     // AuthService.requestPasswordReset(_emailController.text.trim());
     Navigator.pop(context);
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Fitur reset kata sandi belum tersedia saat ini.')),
+      const SnackBar(
+        content: Text('Fitur reset kata sandi belum tersedia saat ini.'),
+      ),
     );
   }
 
@@ -914,7 +973,10 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
           children: [
             const Text(
               'Masukkan email akun Anda. Kami akan mengirimkan tautan reset kata sandi.',
-              style: TextStyle(color: _LoginPalette.textSecondary, fontSize: 13),
+              style: TextStyle(
+                color: _LoginPalette.textSecondary,
+                fontSize: 13,
+              ),
             ),
             const SizedBox(height: 16),
             _FormField(
@@ -924,8 +986,10 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
               icon: Icons.email_outlined,
               keyboardType: TextInputType.emailAddress,
               validator: (val) {
-                if (val == null || val.trim().isEmpty) return 'Email wajib diisi';
-                if (!val.trim().contains('@')) return 'Masukkan alamat email yang valid';
+                if (val == null || val.trim().isEmpty)
+                  return 'Email wajib diisi';
+                if (!val.trim().contains('@'))
+                  return 'Masukkan alamat email yang valid';
                 return null;
               },
             ),
@@ -935,14 +999,19 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context),
-          child: const Text('Batal', style: TextStyle(color: _LoginPalette.textSecondary)),
+          child: const Text(
+            'Batal',
+            style: TextStyle(color: _LoginPalette.textSecondary),
+          ),
         ),
         ElevatedButton(
           onPressed: _submit,
           style: ElevatedButton.styleFrom(
             backgroundColor: _LoginPalette.accent,
             foregroundColor: _LoginPalette.bg,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
           ),
           child: const Text('Kirim Link'),
         ),

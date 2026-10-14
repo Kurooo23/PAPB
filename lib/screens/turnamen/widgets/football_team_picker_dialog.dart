@@ -114,10 +114,29 @@ class _FootballTeamPickerDialogState extends State<FootballTeamPickerDialog> {
         : availableDivisions.first;
 
     _pageController = PageController(initialPage: 0, viewportFraction: 0.88);
+    // PageView.onPageChanged cuma memicu setelah swipe/fling selesai (settle),
+    // jadi selama animasinya masih berjalan, kartu yang terlihat di tengah
+    // layar bisa beda dari _currentClubIndex untuk sesaat. Itu bikin label
+    // tombol "PILIH: ..." dan highlight kartu ikut menampilkan tim yang lama,
+    // padahal secara visual sudah pindah ke tim lain — kalau pengguna tap
+    // pas momen itu, tim yang kepilih jadi beda dari yang terlihat di layar.
+    // Listener ini menyinkronkan _currentClubIndex terus-menerus dari posisi
+    // scroll asli PageController, bukan cuma saat sudah berhenti.
+    _pageController.addListener(_syncCurrentClubIndexWithScroll);
+  }
+
+  void _syncCurrentClubIndexWithScroll() {
+    if (_currentClubs.isEmpty) return;
+    if (!_pageController.hasClients || _pageController.page == null) return;
+    final rounded = _pageController.page!.round().clamp(0, _currentClubs.length - 1);
+    if (rounded != _currentClubIndex) {
+      setState(() => _currentClubIndex = rounded);
+    }
   }
 
   @override
   void dispose() {
+    _pageController.removeListener(_syncCurrentClubIndexWithScroll);
     _pageController.dispose();
     super.dispose();
   }
@@ -246,7 +265,13 @@ class _FootballTeamPickerDialogState extends State<FootballTeamPickerDialog> {
 
   void _selectCurrentClub() {
     if (_currentClubs.isEmpty) return;
-    final club = _currentClubs[_currentClubIndex];
+    // Ambil posisi asli dari PageController, bukan _currentClubIndex, supaya
+    // tidak mungkin ada jeda satu frame antara listener sinkronisasi dan tap
+    // pengguna — tim yang kepilih dijamin sama dengan yang terlihat di layar.
+    final index = _pageController.hasClients && _pageController.page != null
+        ? _pageController.page!.round().clamp(0, _currentClubs.length - 1)
+        : _currentClubIndex;
+    final club = _currentClubs[index];
     final String formattedClub = _selectedLeague == 'Tim Nasional'
         ? (club.startsWith('Timnas') ? club : 'Timnas $club')
         : club;
@@ -487,7 +512,6 @@ class _FootballTeamPickerDialogState extends State<FootballTeamPickerDialog> {
                           PageView.builder(
                             controller: _pageController,
                             itemCount: clubs.length,
-                            onPageChanged: (idx) => setState(() => _currentClubIndex = idx),
                             itemBuilder: (context, index) {
                               final clubName = clubs[index];
                               final isCurrent = index == _currentClubIndex;

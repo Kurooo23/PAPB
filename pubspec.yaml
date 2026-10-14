@@ -32,7 +32,7 @@ flutter:
   assets:
     - assets/images/logos/clubs/
     - assets/images/logos/flags/
-    - assets/icons/rivnet_logo.png
+    - assets/icons/
 
 flutter_launcher_icons:
   android: true

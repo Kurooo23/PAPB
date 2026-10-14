@@ -1,19 +1,24 @@
 import 'package:sqflite/sqflite.dart';
 import 'package:uuid/uuid.dart';
+
 import '../database_helper.dart';
 import '../models/pertandingan_model.dart';
 import '../models/peserta_model.dart';
 import '../models/turnamen_model.dart';
 
 class LocalTournamentService {
-  static final LocalTournamentService instance = LocalTournamentService._internal();
+  static final LocalTournamentService instance =
+      LocalTournamentService._internal();
   LocalTournamentService._internal();
 
   final DatabaseHelper _dbHelper = DatabaseHelper.instance;
   static const _uuid = Uuid();
 
   // === Helper: Nama Babak Eliminasi ===
-  static String _getEliminationRoundName(int matchesInRound, {String prefix = ''}) {
+  static String _getEliminationRoundName(
+    int matchesInRound, {
+    String prefix = '',
+  }) {
     if (matchesInRound == 1) return '${prefix}Final'.trim();
     if (matchesInRound == 2) return '${prefix}Semifinal'.trim();
     if (matchesInRound == 4) return '${prefix}Perempat Final'.trim();
@@ -86,18 +91,59 @@ class LocalTournamentService {
 
     // Hubungkan next_pertandingan_id antar babak
     for (int r = 0; r < rounds.length - 1; r++) {
-      for (int i = 0; i < rounds[r].length; i++) {
-        final matchPairIdx = i ~/ (step * 2);
-        final targetMatchIdx = (matchPairIdx * step).clamp(0, rounds[r + 1].length - 1);
-        rounds[r][i]['next_pertandingan_id'] = rounds[r + 1][targetMatchIdx]['id_pertandingan'];
+      for (int tieIdx = 0; tieIdx < rounds[r].length ~/ step; tieIdx++) {
+        final targetTieIdx = (tieIdx ~/ 2).clamp(
+          0,
+          rounds[r + 1].length ~/ step - 1,
+        );
+        final targetMatchIdx = targetTieIdx * step;
+        for (int leg = 0; leg < step; leg++) {
+          rounds[r][tieIdx * step + leg]['next_pertandingan_id'] =
+              rounds[r + 1][targetMatchIdx]['id_pertandingan'];
+        }
       }
     }
 
-    // Batch insert
-    for (final round in rounds) {
-      for (final m in round) {
-        batch.insert('pertandingan', m, conflictAlgorithm: ConflictAlgorithm.replace);
+    final matches = rounds.expand((round) => round).toList();
+    if (count >= 4) {
+      final thirdPlaceMatches = <Map<String, dynamic>>[];
+      for (int leg = 1; leg <= jumlahLeg; leg++) {
+        thirdPlaceMatches.add({
+          'id_pertandingan': _uuid.v4(),
+          'id_turnamen': idTurnamen,
+          'id_peserta_1': null,
+          'id_peserta_2': null,
+          'babak': jumlahLeg == 2
+              ? 'Leg $leg - Perebutan Juara 3'
+              : 'Perebutan Juara 3',
+          'skor_peserta_1': 0,
+          'skor_peserta_2': 0,
+          'status': 'Belum Mulai',
+          'urutan': 0,
+          'next_pertandingan_id': null,
+        });
       }
+
+      final finalIndex = matches.indexWhere(
+        (match) =>
+            (match['babak'] as String).replaceFirst(
+              RegExp(r'^Leg [12] - '),
+              '',
+            ) ==
+            'Final',
+      );
+      matches.insertAll(finalIndex, thirdPlaceMatches);
+      for (var i = 0; i < matches.length; i++) {
+        matches[i]['urutan'] = i + 1;
+      }
+    }
+
+    for (final match in matches) {
+      batch.insert(
+        'pertandingan',
+        match,
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
     }
   }
 
@@ -167,14 +213,17 @@ class LocalTournamentService {
     for (int r = 0; r < wbRounds.length - 1; r++) {
       for (int i = 0; i < wbRounds[r].length; i++) {
         final targetIdx = (i ~/ 2).clamp(0, wbRounds[r + 1].length - 1);
-        wbRounds[r][i]['next_pertandingan_id'] = wbRounds[r + 1][targetIdx]['id_pertandingan'];
+        wbRounds[r][i]['next_pertandingan_id'] =
+            wbRounds[r + 1][targetIdx]['id_pertandingan'];
       }
     }
 
     // --- Losers Bracket ---
     final List<List<Map<String, dynamic>>> lbRounds = [];
     if (count > 2) {
-      final lbRoundCount = (wbRounds.length - 1) * 2 > 0 ? (wbRounds.length - 1) * 2 : 1;
+      final lbRoundCount = (wbRounds.length - 1) * 2 > 0
+          ? (wbRounds.length - 1) * 2
+          : 1;
       int lbMatchCount = (count ~/ 4) > 0 ? (count ~/ 4) : 1;
 
       for (int lr = 0; lr < lbRoundCount; lr++) {
@@ -218,7 +267,8 @@ class LocalTournamentService {
       for (int r = 0; r < lbRounds.length - 1; r++) {
         for (int i = 0; i < lbRounds[r].length; i++) {
           final nextIdx = i.clamp(0, lbRounds[r + 1].length - 1);
-          lbRounds[r][i]['next_pertandingan_id'] = lbRounds[r + 1][nextIdx]['id_pertandingan'];
+          lbRounds[r][i]['next_pertandingan_id'] =
+              lbRounds[r + 1][nextIdx]['id_pertandingan'];
         }
       }
     }
@@ -262,7 +312,11 @@ class LocalTournamentService {
     final allRounds = [...wbRounds, ...lbRounds, gfMatches];
     for (final round in allRounds) {
       for (final m in round) {
-        batch.insert('pertandingan', m, conflictAlgorithm: ConflictAlgorithm.replace);
+        batch.insert(
+          'pertandingan',
+          m,
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
       }
     }
   }
@@ -280,23 +334,21 @@ class LocalTournamentService {
     // Leg 1 (Home)
     for (int i = 0; i < pesertaList.length; i++) {
       for (int j = i + 1; j < pesertaList.length; j++) {
-        final babak = jumlahLeg == 2 ? 'Leg 1 - Match $matchNum' : 'Match $matchNum';
-        batch.insert(
-          'pertandingan',
-          {
-            'id_pertandingan': _uuid.v4(),
-            'id_turnamen': idTurnamen,
-            'id_peserta_1': pesertaList[i].idPeserta,
-            'id_peserta_2': pesertaList[j].idPeserta,
-            'babak': babak,
-            'skor_peserta_1': 0,
-            'skor_peserta_2': 0,
-            'status': 'Belum Mulai',
-            'urutan': order++,
-            'next_pertandingan_id': null,
-          },
-          conflictAlgorithm: ConflictAlgorithm.replace,
-        );
+        final babak = jumlahLeg == 2
+            ? 'Leg 1 - Match $matchNum'
+            : 'Match $matchNum';
+        batch.insert('pertandingan', {
+          'id_pertandingan': _uuid.v4(),
+          'id_turnamen': idTurnamen,
+          'id_peserta_1': pesertaList[i].idPeserta,
+          'id_peserta_2': pesertaList[j].idPeserta,
+          'babak': babak,
+          'skor_peserta_1': 0,
+          'skor_peserta_2': 0,
+          'status': 'Belum Mulai',
+          'urutan': order++,
+          'next_pertandingan_id': null,
+        }, conflictAlgorithm: ConflictAlgorithm.replace);
         matchNum++;
       }
     }
@@ -306,22 +358,18 @@ class LocalTournamentService {
       matchNum = 1;
       for (int i = 0; i < pesertaList.length; i++) {
         for (int j = i + 1; j < pesertaList.length; j++) {
-          batch.insert(
-            'pertandingan',
-            {
-              'id_pertandingan': _uuid.v4(),
-              'id_turnamen': idTurnamen,
-              'id_peserta_1': pesertaList[j].idPeserta,
-              'id_peserta_2': pesertaList[i].idPeserta,
-              'babak': 'Leg 2 - Match $matchNum',
-              'skor_peserta_1': 0,
-              'skor_peserta_2': 0,
-              'status': 'Belum Mulai',
-              'urutan': order++,
-              'next_pertandingan_id': null,
-            },
-            conflictAlgorithm: ConflictAlgorithm.replace,
-          );
+          batch.insert('pertandingan', {
+            'id_pertandingan': _uuid.v4(),
+            'id_turnamen': idTurnamen,
+            'id_peserta_1': pesertaList[j].idPeserta,
+            'id_peserta_2': pesertaList[i].idPeserta,
+            'babak': 'Leg 2 - Match $matchNum',
+            'skor_peserta_1': 0,
+            'skor_peserta_2': 0,
+            'status': 'Belum Mulai',
+            'urutan': order++,
+            'next_pertandingan_id': null,
+          }, conflictAlgorithm: ConflictAlgorithm.replace);
           matchNum++;
         }
       }
@@ -344,40 +392,32 @@ class LocalTournamentService {
       final p2 = (i * 2 + 1 < count) ? pesertaList[i * 2 + 1].idPeserta : null;
       final babak1 = jumlahLeg == 2 ? 'Swiss Ronde 1 - Leg 1' : 'Swiss Ronde 1';
 
-      batch.insert(
-        'pertandingan',
-        {
+      batch.insert('pertandingan', {
+        'id_pertandingan': _uuid.v4(),
+        'id_turnamen': idTurnamen,
+        'id_peserta_1': p1,
+        'id_peserta_2': p2,
+        'babak': babak1,
+        'skor_peserta_1': 0,
+        'skor_peserta_2': 0,
+        'status': 'Belum Mulai',
+        'urutan': order++,
+        'next_pertandingan_id': null,
+      }, conflictAlgorithm: ConflictAlgorithm.replace);
+
+      if (jumlahLeg == 2) {
+        batch.insert('pertandingan', {
           'id_pertandingan': _uuid.v4(),
           'id_turnamen': idTurnamen,
-          'id_peserta_1': p1,
-          'id_peserta_2': p2,
-          'babak': babak1,
+          'id_peserta_1': p2,
+          'id_peserta_2': p1,
+          'babak': 'Swiss Ronde 1 - Leg 2',
           'skor_peserta_1': 0,
           'skor_peserta_2': 0,
           'status': 'Belum Mulai',
           'urutan': order++,
           'next_pertandingan_id': null,
-        },
-        conflictAlgorithm: ConflictAlgorithm.replace,
-      );
-
-      if (jumlahLeg == 2) {
-        batch.insert(
-          'pertandingan',
-          {
-            'id_pertandingan': _uuid.v4(),
-            'id_turnamen': idTurnamen,
-            'id_peserta_1': p2,
-            'id_peserta_2': p1,
-            'babak': 'Swiss Ronde 1 - Leg 2',
-            'skor_peserta_1': 0,
-            'skor_peserta_2': 0,
-            'status': 'Belum Mulai',
-            'urutan': order++,
-            'next_pertandingan_id': null,
-          },
-          conflictAlgorithm: ConflictAlgorithm.replace,
-        );
+        }, conflictAlgorithm: ConflictAlgorithm.replace);
       }
     }
   }
@@ -417,8 +457,11 @@ class LocalTournamentService {
 
     await db.transaction((txn) async {
       // 1. Insert turnamen
-      await txn.insert('turnamen', turnamen.toMap(),
-          conflictAlgorithm: ConflictAlgorithm.replace);
+      await txn.insert(
+        'turnamen',
+        turnamen.toMap(),
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
 
       // 2. Insert peserta
       final List<PesertaModel> pesertaList = [];
@@ -432,8 +475,11 @@ class LocalTournamentService {
           namaPeserta: nama,
         );
         pesertaList.add(p);
-        await txn.insert('peserta', p.toMap(),
-            conflictAlgorithm: ConflictAlgorithm.replace);
+        await txn.insert(
+          'peserta',
+          p.toMap(),
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
       }
 
       // 3. Generate matches & brackets
@@ -458,7 +504,11 @@ class LocalTournamentService {
   // ==========================================================
   // 2. GET Semua Turnamen Privat
   // ==========================================================
-  Future<List<TurnamenModel>> getAllTurnamen({String? search, String? status, String emailUser = ''}) async {
+  Future<List<TurnamenModel>> getAllTurnamen({
+    String? search,
+    String? status,
+    String emailUser = '',
+  }) async {
     final db = await _dbHelper.database;
     String whereClause = 'is_private = 1 AND email_user = ?';
     final List<dynamic> whereArgs = [emailUser];
@@ -486,9 +536,14 @@ class LocalTournamentService {
   // ==========================================================
   // 3. GET Turnamen Privat Aktif
   // ==========================================================
-  Future<List<TurnamenModel>> getTurnamenAktif({String? search, String? statusFilter, String emailUser = ''}) async {
+  Future<List<TurnamenModel>> getTurnamenAktif({
+    String? search,
+    String? statusFilter,
+    String emailUser = '',
+  }) async {
     final db = await _dbHelper.database;
-    String whereClause = "is_private = 1 AND status != 'Selesai' AND email_user = ?";
+    String whereClause =
+        "is_private = 1 AND status != 'Selesai' AND email_user = ?";
     final List<dynamic> whereArgs = [emailUser];
 
     if (search != null && search.trim().isNotEmpty) {
@@ -514,9 +569,13 @@ class LocalTournamentService {
   // ==========================================================
   // 4. GET Riwayat Turnamen Privat (Selesai)
   // ==========================================================
-  Future<List<TurnamenModel>> getRiwayatTurnamen({String? search, String emailUser = ''}) async {
+  Future<List<TurnamenModel>> getRiwayatTurnamen({
+    String? search,
+    String emailUser = '',
+  }) async {
     final db = await _dbHelper.database;
-    String whereClause = "is_private = 1 AND status = 'Selesai' AND email_user = ?";
+    String whereClause =
+        "is_private = 1 AND status = 'Selesai' AND email_user = ?";
     final List<dynamic> whereArgs = [emailUser];
 
     if (search != null && search.trim().isNotEmpty) {
@@ -559,7 +618,8 @@ class LocalTournamentService {
     );
     final pesertaList = pResults.map((p) => PesertaModel.fromMap(p)).toList();
 
-    final mResults = await db.rawQuery('''
+    var mResults = await db.rawQuery(
+      '''
       SELECT 
         m.*,
         p1.nama_peserta AS nama_peserta_1,
@@ -569,10 +629,86 @@ class LocalTournamentService {
       LEFT JOIN peserta p2 ON m.id_peserta_2 = p2.id_peserta
       WHERE m.id_turnamen = ?
       ORDER BY m.urutan ASC
-    ''', [idTurnamen]);
+    ''',
+      [idTurnamen],
+    );
 
-    final pertandinganList =
-        mResults.map((m) => PertandinganModel.fromMap(m)).toList();
+    if (turnamen.formatBracket == 'Single Elimination' &&
+        turnamen.jumlahLeg == 2) {
+      final matches = mResults
+          .map((match) => Map<String, Object?>.from(match))
+          .toList();
+      final roundNames = matches
+          .where((match) => (match['babak'] as String).startsWith('Leg 1 - '))
+          .map(
+            (match) => (match['babak'] as String).replaceFirst('Leg 1 - ', ''),
+          )
+          .toSet();
+
+      await db.transaction((txn) async {
+        for (final roundName in roundNames) {
+          final firstLegs =
+              matches
+                  .where((match) => match['babak'] == 'Leg 1 - $roundName')
+                  .toList()
+                ..sort(
+                  (a, b) => (a['urutan'] as int).compareTo(b['urutan'] as int),
+                );
+          final secondLegs =
+              matches
+                  .where((match) => match['babak'] == 'Leg 2 - $roundName')
+                  .toList()
+                ..sort(
+                  (a, b) => (a['urutan'] as int).compareTo(b['urutan'] as int),
+                );
+
+          for (var i = 0; i < firstLegs.length && i < secondLegs.length; i++) {
+            final firstLeg = firstLegs[i];
+            final secondLeg = secondLegs[i];
+            final firstParticipant = firstLeg['id_peserta_1'];
+            final secondParticipant = firstLeg['id_peserta_2'];
+            if (secondLeg['status'] == 'Selesai' ||
+                firstParticipant == null ||
+                secondParticipant == null ||
+                (secondLeg['id_peserta_1'] == secondParticipant &&
+                    secondLeg['id_peserta_2'] == firstParticipant)) {
+              continue;
+            }
+
+            await txn.update(
+              'pertandingan',
+              {
+                'id_peserta_1': secondParticipant,
+                'id_peserta_2': firstParticipant,
+              },
+              where: 'id_pertandingan = ?',
+              whereArgs: [secondLeg['id_pertandingan']],
+            );
+            secondLeg['id_peserta_1'] = secondParticipant;
+            secondLeg['id_peserta_2'] = firstParticipant;
+          }
+        }
+      });
+
+      mResults = await db.rawQuery(
+        '''
+        SELECT
+          m.*,
+          p1.nama_peserta AS nama_peserta_1,
+          p2.nama_peserta AS nama_peserta_2
+        FROM pertandingan m
+        LEFT JOIN peserta p1 ON m.id_peserta_1 = p1.id_peserta
+        LEFT JOIN peserta p2 ON m.id_peserta_2 = p2.id_peserta
+        WHERE m.id_turnamen = ?
+        ORDER BY m.urutan ASC
+      ''',
+        [idTurnamen],
+      );
+    }
+
+    final pertandinganList = mResults
+        .map((m) => PertandinganModel.fromMap(m))
+        .toList();
 
     return {
       'turnamen': turnamen,
@@ -621,10 +757,13 @@ class LocalTournamentService {
     required int skor1,
     required int skor2,
     required String status,
+    int? skorPenalti1,
+    int? skorPenalti2,
   }) async {
     final db = await _dbHelper.database;
 
-    final mResults = await db.rawQuery('''
+    final mResults = await db.rawQuery(
+      '''
       SELECT 
         m.*,
         p1.nama_peserta AS nama_peserta_1,
@@ -633,13 +772,92 @@ class LocalTournamentService {
       LEFT JOIN peserta p1 ON m.id_peserta_1 = p1.id_peserta
       LEFT JOIN peserta p2 ON m.id_peserta_2 = p2.id_peserta
       WHERE m.id_pertandingan = ?
-    ''', [idPertandingan]);
+    ''',
+      [idPertandingan],
+    );
 
     if (mResults.isEmpty) {
       throw Exception('Pertandingan tidak ditemukan di database lokal.');
     }
 
     final currentMatch = PertandinganModel.fromMap(mResults.first);
+    final tournamentRows = await db.query(
+      'turnamen',
+      columns: ['format_bracket', 'jumlah_leg'],
+      where: 'id_turnamen = ?',
+      whereArgs: [currentMatch.idTurnamen],
+      limit: 1,
+    );
+    if (tournamentRows.isEmpty) {
+      throw Exception('Turnamen untuk pertandingan ini tidak ditemukan.');
+    }
+    final tournament = tournamentRows.first;
+    final isKnockout = tournament['format_bracket'] == 'Single Elimination';
+
+    if ((skorPenalti1 != null && skorPenalti1 < 0) ||
+        (skorPenalti2 != null && skorPenalti2 < 0)) {
+      throw Exception('Skor adu penalti harus berupa angka nol atau lebih.');
+    }
+
+    if (status == 'Selesai' && isKnockout) {
+      final isTwoLeg = tournament['jumlah_leg'] == 2;
+      if (!isTwoLeg) {
+        if (skor1 == skor2) {
+          if (skorPenalti1 == null || skorPenalti2 == null) {
+            throw Exception(
+              'Skor seri. Masukkan skor adu penalti untuk menentukan pemenang.',
+            );
+          }
+          if (skorPenalti1 == skorPenalti2) {
+            throw Exception('Adu penalti tidak boleh berakhir seri.');
+          }
+        }
+      } else if (currentMatch.babak.startsWith('Leg 2 - ')) {
+        final roundName = currentMatch.babak.replaceFirst('Leg 2 - ', '');
+        final firstLegs = await db.query(
+          'pertandingan',
+          where: 'id_turnamen = ? AND babak = ?',
+          whereArgs: [currentMatch.idTurnamen, 'Leg 1 - $roundName'],
+        );
+        Map<String, Object?>? firstLeg;
+        for (final leg in firstLegs) {
+          if (leg['id_peserta_1'] == currentMatch.idPeserta2 &&
+              leg['id_peserta_2'] == currentMatch.idPeserta1) {
+            firstLeg = leg;
+            break;
+          }
+        }
+
+        if (firstLeg == null || firstLeg['status'] != 'Selesai') {
+          throw Exception(
+            'Selesaikan Leg 1 terlebih dahulu sebelum menyelesaikan Leg 2.',
+          );
+        }
+
+        final previousScore1 =
+            firstLeg['id_peserta_1'] == currentMatch.idPeserta1
+            ? firstLeg['skor_peserta_1'] as int
+            : firstLeg['skor_peserta_2'] as int;
+        final previousScore2 =
+            firstLeg['id_peserta_1'] == currentMatch.idPeserta2
+            ? firstLeg['skor_peserta_1'] as int
+            : firstLeg['skor_peserta_2'] as int;
+        final aggregateIsTied =
+            skor1 + previousScore1 == skor2 + previousScore2;
+        if (skor1 == skor2 || aggregateIsTied) {
+          if (skorPenalti1 == null || skorPenalti2 == null) {
+            throw Exception(
+              aggregateIsTied
+                  ? 'Agregat seri. Masukkan skor adu penalti untuk menentukan pemenang.'
+                  : 'Skor Leg 2 seri. Masukkan skor adu penalti.',
+            );
+          }
+          if (skorPenalti1 == skorPenalti2) {
+            throw Exception('Adu penalti tidak boleh berakhir seri.');
+          }
+        }
+      }
+    }
 
     await db.transaction((txn) async {
       // 1. Update skor & status pertandingan
@@ -648,6 +866,8 @@ class LocalTournamentService {
         {
           'skor_peserta_1': skor1,
           'skor_peserta_2': skor2,
+          'skor_penalti_peserta_1': skorPenalti1,
+          'skor_penalti_peserta_2': skorPenalti2,
           'status': status,
         },
         where: 'id_pertandingan = ?',
@@ -664,40 +884,245 @@ class LocalTournamentService {
 
       // 3. Majukan pemenang jika pertandingan Selesai dan ada next_pertandingan_id
       if (status == 'Selesai' && currentMatch.nextPertandinganId != null) {
-        String? winnerId;
-        if (skor1 > skor2) {
-          winnerId = currentMatch.idPeserta1;
-        } else if (skor2 > skor1) {
-          winnerId = currentMatch.idPeserta2;
-        }
+        final tournamentRows = await txn.query(
+          'turnamen',
+          columns: ['format_bracket', 'jumlah_leg'],
+          where: 'id_turnamen = ?',
+          whereArgs: [currentMatch.idTurnamen],
+          limit: 1,
+        );
+        final isTwoLegSingleElimination =
+            tournamentRows.isNotEmpty &&
+            tournamentRows.first['format_bracket'] == 'Single Elimination' &&
+            tournamentRows.first['jumlah_leg'] == 2;
 
-        if (winnerId != null) {
+        if (isTwoLegSingleElimination) {
           final siblings = await txn.query(
             'pertandingan',
             where: 'next_pertandingan_id = ?',
             whereArgs: [currentMatch.nextPertandinganId],
             orderBy: 'urutan ASC',
           );
+          final currentIndex = siblings.indexWhere(
+            (sibling) => sibling['id_pertandingan'] == idPertandingan,
+          );
+          final tieIndex = currentIndex ~/ 2;
+          final tieLegs = siblings.skip(tieIndex * 2).take(2).toList();
 
-          if (siblings.isNotEmpty) {
-            final isSlot1 = siblings.first['id_pertandingan'] == idPertandingan;
-            final updateField = isSlot1 ? 'id_peserta_1' : 'id_peserta_2';
+          if (currentIndex >= 0 &&
+              tieLegs.length == 2 &&
+              tieLegs.every((leg) => leg['status'] == 'Selesai')) {
+            final homeId = tieLegs.first['id_peserta_1'] as String?;
+            final awayId = tieLegs.first['id_peserta_2'] as String?;
+            var homeScore = 0;
+            var awayScore = 0;
 
-            await txn.update(
+            for (final leg in tieLegs) {
+              if (leg['id_peserta_1'] == homeId) {
+                homeScore += leg['skor_peserta_1'] as int;
+                awayScore += leg['skor_peserta_2'] as int;
+              } else {
+                awayScore += leg['skor_peserta_1'] as int;
+                homeScore += leg['skor_peserta_2'] as int;
+              }
+            }
+
+            Map<String, Object?>? penaltyLeg;
+            for (final leg in tieLegs) {
+              if (leg['skor_penalti_peserta_1'] != null &&
+                  leg['skor_penalti_peserta_2'] != null) {
+                penaltyLeg = leg;
+                break;
+              }
+            }
+            if (homeId != null &&
+                awayId != null &&
+                (homeScore != awayScore || penaltyLeg != null)) {
+              final winnerId = homeScore == awayScore
+                  ? ((penaltyLeg!['skor_penalti_peserta_1'] as int) >
+                            (penaltyLeg['skor_penalti_peserta_2'] as int)
+                        ? penaltyLeg['id_peserta_1'] as String
+                        : penaltyLeg['id_peserta_2'] as String)
+                  : (homeScore > awayScore ? homeId : awayId);
+              final targetSlot = tieIndex % 2;
+              final targets = await txn.query(
+                'pertandingan',
+                where: 'id_pertandingan = ?',
+                whereArgs: [currentMatch.nextPertandinganId],
+                limit: 1,
+              );
+
+              if (targets.isNotEmpty) {
+                final target = targets.first;
+                final firstLegField = targetSlot == 0
+                    ? 'id_peserta_1'
+                    : 'id_peserta_2';
+                await txn.update(
+                  'pertandingan',
+                  {firstLegField: winnerId},
+                  where: 'id_pertandingan = ?',
+                  whereArgs: [currentMatch.nextPertandinganId],
+                );
+
+                final secondLegs = await txn.query(
+                  'pertandingan',
+                  where: 'id_turnamen = ? AND urutan = ? AND babak LIKE ?',
+                  whereArgs: [
+                    currentMatch.idTurnamen,
+                    (target['urutan'] as int) + 1,
+                    'Leg 2 - %',
+                  ],
+                  limit: 1,
+                );
+
+                if (secondLegs.isNotEmpty) {
+                  final secondLegField = targetSlot == 0
+                      ? 'id_peserta_2'
+                      : 'id_peserta_1';
+                  await txn.update(
+                    'pertandingan',
+                    {secondLegField: winnerId},
+                    where: 'id_pertandingan = ?',
+                    whereArgs: [secondLegs.first['id_pertandingan']],
+                  );
+                }
+              }
+            }
+          }
+        } else {
+          String? winnerId;
+          if (skor1 > skor2) {
+            winnerId = currentMatch.idPeserta1;
+          } else if (skor2 > skor1) {
+            winnerId = currentMatch.idPeserta2;
+          } else if (skorPenalti1 != null && skorPenalti2 != null) {
+            winnerId = skorPenalti1 > skorPenalti2
+                ? currentMatch.idPeserta1
+                : currentMatch.idPeserta2;
+          }
+
+          if (winnerId != null) {
+            final siblings = await txn.query(
               'pertandingan',
-              {updateField: winnerId},
-              where: 'id_pertandingan = ?',
+              where: 'next_pertandingan_id = ?',
               whereArgs: [currentMatch.nextPertandinganId],
+              orderBy: 'urutan ASC',
             );
+
+            if (siblings.isNotEmpty) {
+              final isSlot1 =
+                  siblings.first['id_pertandingan'] == idPertandingan;
+              final updateField = isSlot1 ? 'id_peserta_1' : 'id_peserta_2';
+
+              await txn.update(
+                'pertandingan',
+                {updateField: winnerId},
+                where: 'id_pertandingan = ?',
+                whereArgs: [currentMatch.nextPertandinganId],
+              );
+            }
           }
         }
       }
 
-      // Catatan: Status 'Selesai' dan kunci skor turnamen sekarang dilakukan 
+      if (currentMatch.babak.contains('Semifinal')) {
+        final tournaments = await txn.query(
+          'turnamen',
+          columns: ['format_bracket', 'jumlah_leg'],
+          where: 'id_turnamen = ?',
+          whereArgs: [currentMatch.idTurnamen],
+          limit: 1,
+        );
+
+        if (tournaments.isNotEmpty &&
+            tournaments.first['format_bracket'] == 'Single Elimination') {
+          final legCount = tournaments.first['jumlah_leg'] == 2 ? 2 : 1;
+          final semifinalMatches = await txn.query(
+            'pertandingan',
+            where: 'id_turnamen = ? AND babak LIKE ?',
+            whereArgs: [currentMatch.idTurnamen, '%Semifinal%'],
+            orderBy: 'urutan ASC',
+          );
+          final thirdPlaceMatches = await txn.query(
+            'pertandingan',
+            where: 'id_turnamen = ? AND babak LIKE ?',
+            whereArgs: [currentMatch.idTurnamen, '%Perebutan Juara 3%'],
+            orderBy: 'urutan ASC',
+          );
+
+          if (semifinalMatches.length == legCount * 2 &&
+              thirdPlaceMatches.length == legCount) {
+            final semifinalLosers = <String>[];
+
+            for (var i = 0; i < semifinalMatches.length; i += legCount) {
+              final legs = semifinalMatches.skip(i).take(legCount).toList();
+              if (legs.any((leg) => leg['status'] != 'Selesai') ||
+                  legs.any(
+                    (leg) =>
+                        leg['id_peserta_1'] == null ||
+                        leg['id_peserta_2'] == null,
+                  )) {
+                return;
+              }
+
+              final homeId = legs.first['id_peserta_1'] as String;
+              final awayId = legs.first['id_peserta_2'] as String;
+              var homeScore = 0;
+              var awayScore = 0;
+
+              for (final leg in legs) {
+                if (leg['id_peserta_1'] == homeId) {
+                  homeScore += leg['skor_peserta_1'] as int;
+                  awayScore += leg['skor_peserta_2'] as int;
+                } else {
+                  awayScore += leg['skor_peserta_1'] as int;
+                  homeScore += leg['skor_peserta_2'] as int;
+                }
+              }
+
+              if (homeScore == awayScore) {
+                final penaltyLeg = legs.firstWhere(
+                  (leg) =>
+                      leg['skor_penalti_peserta_1'] != null &&
+                      leg['skor_penalti_peserta_2'] != null,
+                  orElse: () => <String, Object?>{},
+                );
+                if (penaltyLeg.isEmpty) return;
+                semifinalLosers.add(
+                  (penaltyLeg['skor_penalti_peserta_1'] as int) <
+                          (penaltyLeg['skor_penalti_peserta_2'] as int)
+                      ? penaltyLeg['id_peserta_1'] as String
+                      : penaltyLeg['id_peserta_2'] as String,
+                );
+              } else {
+                semifinalLosers.add(homeScore < awayScore ? homeId : awayId);
+              }
+            }
+
+            for (var i = 0; i < thirdPlaceMatches.length; i++) {
+              final participants = legCount == 2 && i == 1
+                  ? [semifinalLosers[1], semifinalLosers[0]]
+                  : semifinalLosers;
+              await txn.update(
+                'pertandingan',
+                {
+                  'id_peserta_1': participants[0],
+                  'id_peserta_2': participants[1],
+                },
+                where: 'id_pertandingan = ?',
+                whereArgs: [thirdPlaceMatches[i]['id_pertandingan']],
+              );
+            }
+          }
+        }
+      }
+
+      // Catatan: Status 'Selesai' dan kunci skor turnamen sekarang dilakukan
       // secara manual melalui konfirmasi tombol 'Akhiri Turnamen'.
     });
 
-    final updated = await db.rawQuery('''
+    final updated = await db.rawQuery(
+      '''
       SELECT 
         m.*,
         p1.nama_peserta AS nama_peserta_1,
@@ -706,7 +1131,9 @@ class LocalTournamentService {
       LEFT JOIN peserta p1 ON m.id_peserta_1 = p1.id_peserta
       LEFT JOIN peserta p2 ON m.id_peserta_2 = p2.id_peserta
       WHERE m.id_pertandingan = ?
-    ''', [idPertandingan]);
+    ''',
+      [idPertandingan],
+    );
 
     return PertandinganModel.fromMap(updated.first);
   }

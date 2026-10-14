@@ -1,5 +1,6 @@
 import 'package:sqflite/sqflite.dart';
 import 'package:uuid/uuid.dart';
+
 import '../database_helper.dart';
 import '../models/pertandingan_model.dart';
 import '../models/peserta_model.dart';
@@ -8,9 +9,12 @@ class PertandinganDao {
   final DatabaseHelper _dbHelper = DatabaseHelper.instance;
   static const _uuid = Uuid();
 
-  Future<List<PertandinganModel>> getPertandinganByTurnamen(String idTurnamen) async {
+  Future<List<PertandinganModel>> getPertandinganByTurnamen(
+    String idTurnamen,
+  ) async {
     final db = await _dbHelper.database;
-    final List<Map<String, dynamic>> results = await db.rawQuery('''
+    final List<Map<String, dynamic>> results = await db.rawQuery(
+      '''
       SELECT 
         m.*,
         p1.nama_peserta AS nama_peserta_1,
@@ -20,14 +24,17 @@ class PertandinganDao {
       LEFT JOIN peserta p2 ON m.id_peserta_2 = p2.id_peserta
       WHERE m.id_turnamen = ?
       ORDER BY m.urutan ASC
-    ''', [idTurnamen]);
+    ''',
+      [idTurnamen],
+    );
 
     return results.map((map) => PertandinganModel.fromMap(map)).toList();
   }
 
   Future<PertandinganModel?> getPertandinganById(String idPertandingan) async {
     final db = await _dbHelper.database;
-    final List<Map<String, dynamic>> results = await db.rawQuery('''
+    final List<Map<String, dynamic>> results = await db.rawQuery(
+      '''
       SELECT 
         m.*,
         p1.nama_peserta AS nama_peserta_1,
@@ -36,7 +43,9 @@ class PertandinganDao {
       LEFT JOIN peserta p1 ON m.id_peserta_1 = p1.id_peserta
       LEFT JOIN peserta p2 ON m.id_peserta_2 = p2.id_peserta
       WHERE m.id_pertandingan = ?
-    ''', [idPertandingan]);
+    ''',
+      [idPertandingan],
+    );
 
     if (results.isNotEmpty) {
       return PertandinganModel.fromMap(results.first);
@@ -45,7 +54,9 @@ class PertandinganDao {
   }
 
   Future<void> generateBracketSingleElimination(
-      String idTurnamen, List<PesertaModel> pesertaList) async {
+    String idTurnamen,
+    List<PesertaModel> pesertaList,
+  ) async {
     final db = await _dbHelper.database;
     final int count = pesertaList.length;
 
@@ -93,10 +104,7 @@ class PertandinganDao {
       final p1 = p1Index < count ? pesertaList[p1Index].idPeserta : null;
       final p2 = p2Index < count ? pesertaList[p2Index].idPeserta : null;
 
-      rounds[0][i] = rounds[0][i].copyWith(
-        idPeserta1: p1,
-        idPeserta2: p2,
-      );
+      rounds[0][i] = rounds[0][i].copyWith(idPeserta1: p1, idPeserta2: p2);
     }
 
     // Hubungkan next_pertandingan_id antar ronde
@@ -112,15 +120,20 @@ class PertandinganDao {
     final batch = db.batch();
     for (final round in rounds) {
       for (final match in round) {
-        batch.insert('pertandingan', match.toMap(),
-            conflictAlgorithm: ConflictAlgorithm.replace);
+        batch.insert(
+          'pertandingan',
+          match.toMap(),
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
       }
     }
     await batch.commit(noResult: true);
   }
 
   Future<void> generateRoundRobin(
-      String idTurnamen, List<PesertaModel> pesertaList) async {
+    String idTurnamen,
+    List<PesertaModel> pesertaList,
+  ) async {
     final db = await _dbHelper.database;
     final int count = pesertaList.length;
     int order = 1;
@@ -138,8 +151,11 @@ class PertandinganDao {
           status: 'Belum Mulai',
           urutan: order++,
         );
-        batch.insert('pertandingan', match.toMap(),
-            conflictAlgorithm: ConflictAlgorithm.replace);
+        batch.insert(
+          'pertandingan',
+          match.toMap(),
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
         roundNum++;
       }
     }
@@ -151,6 +167,8 @@ class PertandinganDao {
     required int skor1,
     required int skor2,
     required String status,
+    int? skorPenalti1,
+    int? skorPenalti2,
   }) async {
     final db = await _dbHelper.database;
 
@@ -164,6 +182,8 @@ class PertandinganDao {
       {
         'skor_peserta_1': skor1,
         'skor_peserta_2': skor2,
+        'skor_penalti_peserta_1': skorPenalti1,
+        'skor_penalti_peserta_2': skorPenalti2,
         'status': status,
       },
       where: 'id_pertandingan = ?',

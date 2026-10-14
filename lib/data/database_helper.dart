@@ -18,7 +18,7 @@ class DatabaseHelper {
 
     return openDatabase(
       path,
-      version: 6,
+      version: 7,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
       onConfigure: (db) async {
@@ -26,7 +26,6 @@ class DatabaseHelper {
       },
     );
   }
-
 
   Future<void> _onCreate(Database db, int version) async {
     await db.execute('''
@@ -64,6 +63,8 @@ class DatabaseHelper {
         babak                TEXT NOT NULL,
         skor_peserta_1       INTEGER DEFAULT 0,
         skor_peserta_2       INTEGER DEFAULT 0,
+        skor_penalti_peserta_1 INTEGER,
+        skor_penalti_peserta_2 INTEGER,
         status               TEXT NOT NULL DEFAULT 'Belum Mulai',
         urutan               INTEGER DEFAULT 0,
         next_pertandingan_id TEXT,
@@ -89,25 +90,37 @@ class DatabaseHelper {
     // v2: migrasi aman, tambah kolom baru tanpa hapus data
     if (oldVersion < 2) {
       try {
-        await db.execute("ALTER TABLE turnamen ADD COLUMN tipe_game TEXT NOT NULL DEFAULT 'E-Sports'");
+        await db.execute(
+          "ALTER TABLE turnamen ADD COLUMN tipe_game TEXT NOT NULL DEFAULT 'E-Sports'",
+        );
       } catch (_) {}
       try {
-        await db.execute("ALTER TABLE turnamen ADD COLUMN jumlah_leg INTEGER NOT NULL DEFAULT 1");
+        await db.execute(
+          "ALTER TABLE turnamen ADD COLUMN jumlah_leg INTEGER NOT NULL DEFAULT 1",
+        );
       } catch (_) {}
       try {
-        await db.execute("ALTER TABLE turnamen ADD COLUMN is_private INTEGER NOT NULL DEFAULT 1");
+        await db.execute(
+          "ALTER TABLE turnamen ADD COLUMN is_private INTEGER NOT NULL DEFAULT 1",
+        );
       } catch (_) {}
     }
 
     if (oldVersion < 3) {
       try {
-        await db.execute("ALTER TABLE turnamen ADD COLUMN tipe_game TEXT NOT NULL DEFAULT 'E-Sports'");
+        await db.execute(
+          "ALTER TABLE turnamen ADD COLUMN tipe_game TEXT NOT NULL DEFAULT 'E-Sports'",
+        );
       } catch (_) {}
       try {
-        await db.execute("ALTER TABLE turnamen ADD COLUMN jumlah_leg INTEGER NOT NULL DEFAULT 1");
+        await db.execute(
+          "ALTER TABLE turnamen ADD COLUMN jumlah_leg INTEGER NOT NULL DEFAULT 1",
+        );
       } catch (_) {}
       try {
-        await db.execute("ALTER TABLE turnamen ADD COLUMN is_private INTEGER NOT NULL DEFAULT 1");
+        await db.execute(
+          "ALTER TABLE turnamen ADD COLUMN is_private INTEGER NOT NULL DEFAULT 1",
+        );
       } catch (_) {}
     }
 
@@ -128,34 +141,49 @@ class DatabaseHelper {
 
     if (oldVersion < 5) {
       try {
-        await db.execute("ALTER TABLE turnamen ADD COLUMN is_locked INTEGER NOT NULL DEFAULT 0");
+        await db.execute(
+          "ALTER TABLE turnamen ADD COLUMN is_locked INTEGER NOT NULL DEFAULT 0",
+        );
       } catch (_) {}
     }
 
     // v6: isolasi turnamen per akun user
     if (oldVersion < 6) {
       try {
-        await db.execute("ALTER TABLE turnamen ADD COLUMN email_user TEXT NOT NULL DEFAULT ''");
+        await db.execute(
+          "ALTER TABLE turnamen ADD COLUMN email_user TEXT NOT NULL DEFAULT ''",
+        );
       } catch (_) {}
+    }
+
+    if (oldVersion < 7) {
+      await db.execute(
+        'ALTER TABLE pertandingan ADD COLUMN skor_penalti_peserta_1 INTEGER',
+      );
+      await db.execute(
+        'ALTER TABLE pertandingan ADD COLUMN skor_penalti_peserta_2 INTEGER',
+      );
     }
   }
 
-
   // === MANAJEMEN SESI USER LOKAL (OFFLINE) ===
-  Future<void> saveUserSession(Map<String, dynamic> user, {String? token}) async {
+  Future<void> saveUserSession(
+    Map<String, dynamic> user, {
+    String? token,
+  }) async {
     final db = await database;
-    await db.insert(
-      'user_session',
-      {
-        'id_user': user['id_user']?.toString() ?? user['id']?.toString() ?? 'guest',
-        'email': user['email']?.toString() ?? '',
-        'nickname': user['nickname']?.toString() ?? user['nama']?.toString() ?? 'Pemain',
-        'avatar_index': user['avatar_index'] is int ? user['avatar_index'] as int : 0,
-        'token': token ?? user['token']?.toString(),
-        'last_login': DateTime.now().toIso8601String(),
-      },
-      conflictAlgorithm: ConflictAlgorithm.replace,
-    );
+    await db.insert('user_session', {
+      'id_user':
+          user['id_user']?.toString() ?? user['id']?.toString() ?? 'guest',
+      'email': user['email']?.toString() ?? '',
+      'nickname':
+          user['nickname']?.toString() ?? user['nama']?.toString() ?? 'Pemain',
+      'avatar_index': user['avatar_index'] is int
+          ? user['avatar_index'] as int
+          : 0,
+      'token': token ?? user['token']?.toString(),
+      'last_login': DateTime.now().toIso8601String(),
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
   }
 
   Future<Map<String, dynamic>?> getUserSession() async {

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+
 import '../../core/theme/app_colors.dart';
 import '../../data/models/pertandingan_model.dart';
 import '../../data/models/peserta_model.dart';
@@ -56,6 +57,10 @@ class _DetailTurnamenScreenState extends State<DetailTurnamenScreen>
   bool _isLoading = true;
   String? _errorMessage;
   late bool _isPrivate;
+
+  bool get _isKnockoutFormat =>
+      _turnamen?.formatBracket == 'Single Elimination' ||
+      _turnamen?.formatBracket == 'Double Elimination';
 
   final ApiService _apiService = ApiService.instance;
   final LocalTournamentService _localService = LocalTournamentService.instance;
@@ -128,7 +133,9 @@ class _DetailTurnamenScreenState extends State<DetailTurnamenScreen>
     }
 
     for (final m in _pertandinganList) {
-      if (m.status == 'Selesai' && m.idPeserta1 != null && m.idPeserta2 != null) {
+      if (m.status == 'Selesai' &&
+          m.idPeserta1 != null &&
+          m.idPeserta2 != null) {
         final p1 = stats[m.idPeserta1];
         final p2 = stats[m.idPeserta2];
 
@@ -176,7 +183,10 @@ class _DetailTurnamenScreenState extends State<DetailTurnamenScreen>
           children: [
             Icon(Icons.warning_amber_rounded, color: AppColors.error),
             SizedBox(width: 8),
-            Text('Hapus Turnamen', style: TextStyle(color: AppColors.textPrimary, fontSize: 18)),
+            Text(
+              'Hapus Turnamen',
+              style: TextStyle(color: AppColors.textPrimary, fontSize: 18),
+            ),
           ],
         ),
         content: Text(
@@ -188,7 +198,10 @@ class _DetailTurnamenScreenState extends State<DetailTurnamenScreen>
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Batal', style: TextStyle(color: AppColors.textSecondary)),
+            child: const Text(
+              'Batal',
+              style: TextStyle(color: AppColors.textSecondary),
+            ),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: AppColors.error),
@@ -209,9 +222,11 @@ class _DetailTurnamenScreenState extends State<DetailTurnamenScreen>
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(_isPrivate
-                  ? 'Turnamen berhasil dihapus dari database lokal HP'
-                  : 'Turnamen berhasil dihapus dari backend server'),
+              content: Text(
+                _isPrivate
+                    ? 'Turnamen berhasil dihapus dari database lokal HP'
+                    : 'Turnamen berhasil dihapus dari backend server',
+              ),
               backgroundColor: AppColors.success,
             ),
           );
@@ -235,7 +250,9 @@ class _DetailTurnamenScreenState extends State<DetailTurnamenScreen>
     if (_turnamen?.isLocked == true) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Turnamen telah diakhiri. Skor tidak dapat diedit lagi.'),
+          content: Text(
+            'Turnamen telah diakhiri. Skor tidak dapat diedit lagi.',
+          ),
           backgroundColor: AppColors.error,
         ),
       );
@@ -245,11 +262,28 @@ class _DetailTurnamenScreenState extends State<DetailTurnamenScreen>
     if (match.idPeserta1 == null || match.idPeserta2 == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Peserta pertandingan ini belum ditentukan (menunggu babak sebelumnya).'),
+          content: Text(
+            'Peserta pertandingan ini belum ditentukan (menunggu babak sebelumnya).',
+          ),
           backgroundColor: AppColors.warning,
         ),
       );
       return;
+    }
+
+    int? previousLegScore1;
+    int? previousLegScore2;
+    if (_turnamen?.jumlahLeg == 2 && match.babak.startsWith('Leg 2 - ')) {
+      final roundName = match.babak.replaceFirst('Leg 2 - ', '');
+      for (final previousLeg in _pertandinganList) {
+        if (previousLeg.babak == 'Leg 1 - $roundName' &&
+            previousLeg.idPeserta1 == match.idPeserta2 &&
+            previousLeg.idPeserta2 == match.idPeserta1) {
+          previousLegScore1 = previousLeg.skorPeserta2;
+          previousLegScore2 = previousLeg.skorPeserta1;
+          break;
+        }
+      }
     }
 
     showDialog(
@@ -257,6 +291,10 @@ class _DetailTurnamenScreenState extends State<DetailTurnamenScreen>
       builder: (ctx) => InputSkorDialog(
         match: match,
         isPrivate: _isPrivate,
+        isKnockout: _turnamen?.formatBracket == 'Single Elimination',
+        isTwoLeg: _turnamen?.jumlahLeg == 2,
+        previousLegScore1: previousLegScore1,
+        previousLegScore2: previousLegScore2,
         onSaved: _loadData,
       ),
     );
@@ -272,7 +310,10 @@ class _DetailTurnamenScreenState extends State<DetailTurnamenScreen>
           children: [
             Icon(Icons.lock_rounded, color: AppColors.warning),
             SizedBox(width: 8),
-            Text('Akhiri Turnamen?', style: TextStyle(color: AppColors.textPrimary, fontSize: 18)),
+            Text(
+              'Akhiri Turnamen?',
+              style: TextStyle(color: AppColors.textPrimary, fontSize: 18),
+            ),
           ],
         ),
         content: const Text(
@@ -282,7 +323,10 @@ class _DetailTurnamenScreenState extends State<DetailTurnamenScreen>
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Batal', style: TextStyle(color: AppColors.textSecondary)),
+            child: const Text(
+              'Batal',
+              style: TextStyle(color: AppColors.textSecondary),
+            ),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
@@ -290,7 +334,10 @@ class _DetailTurnamenScreenState extends State<DetailTurnamenScreen>
               foregroundColor: Colors.black,
             ),
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Ya, Akhiri Turnamen', style: TextStyle(fontWeight: FontWeight.bold)),
+            child: const Text(
+              'Ya, Akhiri Turnamen',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
           ),
         ],
       ),
@@ -345,7 +392,9 @@ class _DetailTurnamenScreenState extends State<DetailTurnamenScreen>
     if (_isLoading) {
       return const Scaffold(
         backgroundColor: AppColors.bgDark,
-        body: Center(child: CircularProgressIndicator(color: AppColors.primary)),
+        body: Center(
+          child: CircularProgressIndicator(color: AppColors.primary),
+        ),
       );
     }
 
@@ -359,16 +408,27 @@ class _DetailTurnamenScreenState extends State<DetailTurnamenScreen>
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                const Icon(Icons.error_outline_rounded, color: AppColors.error, size: 48),
+                const Icon(
+                  Icons.error_outline_rounded,
+                  color: AppColors.error,
+                  size: 48,
+                ),
                 const SizedBox(height: 12),
-                Text(_errorMessage ?? 'Data tidak ditemukan',
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(color: AppColors.textSecondary)),
+                Text(
+                  _errorMessage ?? 'Data tidak ditemukan',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: AppColors.textSecondary),
+                ),
                 const SizedBox(height: 16),
                 ElevatedButton(
                   onPressed: _loadData,
-                  style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary),
-                  child: const Text('Coba Lagi', style: TextStyle(color: Colors.white)),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                  ),
+                  child: const Text(
+                    'Coba Lagi',
+                    style: TextStyle(color: Colors.white),
+                  ),
                 ),
               ],
             ),
@@ -380,7 +440,9 @@ class _DetailTurnamenScreenState extends State<DetailTurnamenScreen>
     final t = _turnamen!;
     final statusColor = _getStatusColor(t.status);
     final dateFormat = DateFormat('dd MMM yyyy, HH:mm');
-    final selesaiCount = _pertandinganList.where((m) => m.status == 'Selesai').length;
+    final selesaiCount = _pertandinganList
+        .where((m) => m.status == 'Selesai')
+        .length;
     final totalCount = _pertandinganList.length;
     final double progress = totalCount > 0 ? (selesaiCount / totalCount) : 0.0;
 
@@ -409,7 +471,10 @@ class _DetailTurnamenScreenState extends State<DetailTurnamenScreen>
             },
           ),
           IconButton(
-            icon: const Icon(Icons.delete_outline_rounded, color: AppColors.error),
+            icon: const Icon(
+              Icons.delete_outline_rounded,
+              color: AppColors.error,
+            ),
             tooltip: 'Hapus Turnamen',
             onPressed: _deleteTurnamen,
           ),
@@ -445,11 +510,16 @@ class _DetailTurnamenScreenState extends State<DetailTurnamenScreen>
                   Row(
                     children: [
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 5,
+                        ),
                         decoration: BoxDecoration(
                           color: statusColor.withValues(alpha: 0.15),
                           borderRadius: BorderRadius.circular(20),
-                          border: Border.all(color: statusColor.withValues(alpha: 0.4)),
+                          border: Border.all(
+                            color: statusColor.withValues(alpha: 0.4),
+                          ),
                         ),
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
@@ -476,7 +546,10 @@ class _DetailTurnamenScreenState extends State<DetailTurnamenScreen>
                       ),
                       const SizedBox(width: 8),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
                         decoration: BoxDecoration(
                           color: _isPrivate
                               ? const Color(0xFF10B981).withValues(alpha: 0.15)
@@ -492,15 +565,21 @@ class _DetailTurnamenScreenState extends State<DetailTurnamenScreen>
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Icon(
-                              _isPrivate ? Icons.lock_rounded : Icons.public_rounded,
+                              _isPrivate
+                                  ? Icons.lock_rounded
+                                  : Icons.public_rounded,
                               size: 11,
-                              color: _isPrivate ? const Color(0xFF10B981) : AppColors.secondary,
+                              color: _isPrivate
+                                  ? const Color(0xFF10B981)
+                                  : AppColors.secondary,
                             ),
                             const SizedBox(width: 4),
                             Text(
                               _isPrivate ? 'Privat (Lokal HP)' : 'Publik',
                               style: TextStyle(
-                                color: _isPrivate ? const Color(0xFF10B981) : AppColors.secondary,
+                                color: _isPrivate
+                                    ? const Color(0xFF10B981)
+                                    : AppColors.secondary,
                                 fontSize: 11,
                                 fontWeight: FontWeight.bold,
                               ),
@@ -517,7 +596,10 @@ class _DetailTurnamenScreenState extends State<DetailTurnamenScreen>
                     runSpacing: 6,
                     children: [
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 4,
+                        ),
                         decoration: BoxDecoration(
                           color: Colors.white.withValues(alpha: 0.08),
                           borderRadius: BorderRadius.circular(8),
@@ -532,7 +614,10 @@ class _DetailTurnamenScreenState extends State<DetailTurnamenScreen>
                         ),
                       ),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 4,
+                        ),
                         decoration: BoxDecoration(
                           color: AppColors.primary.withValues(alpha: 0.15),
                           borderRadius: BorderRadius.circular(8),
@@ -551,11 +636,18 @@ class _DetailTurnamenScreenState extends State<DetailTurnamenScreen>
                   const SizedBox(height: 12),
                   Row(
                     children: [
-                      const Icon(Icons.schedule_rounded, size: 14, color: AppColors.textSecondary),
+                      const Icon(
+                        Icons.schedule_rounded,
+                        size: 14,
+                        color: AppColors.textSecondary,
+                      ),
                       const SizedBox(width: 6),
                       Text(
                         dateFormat.format(t.tanggalMulai),
-                        style: const TextStyle(color: AppColors.textSecondary, fontSize: 12),
+                        style: const TextStyle(
+                          color: AppColors.textSecondary,
+                          fontSize: 12,
+                        ),
                       ),
                     ],
                   ),
@@ -563,7 +655,10 @@ class _DetailTurnamenScreenState extends State<DetailTurnamenScreen>
                     const SizedBox(height: 6),
                     Text(
                       t.deskripsi!,
-                      style: const TextStyle(color: AppColors.textMuted, fontSize: 12),
+                      style: const TextStyle(
+                        color: AppColors.textMuted,
+                        fontSize: 12,
+                      ),
                     ),
                   ],
                   // Progress Bar Laga
@@ -575,11 +670,19 @@ class _DetailTurnamenScreenState extends State<DetailTurnamenScreen>
                         children: [
                           const Text(
                             'Progress Turnamen',
-                            style: TextStyle(color: AppColors.textSecondary, fontSize: 11, fontWeight: FontWeight.w500),
+                            style: TextStyle(
+                              color: AppColors.textSecondary,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w500,
+                            ),
                           ),
                           Text(
                             '$selesaiCount / $totalCount Laga (${(progress * 100).toInt()}%)',
-                            style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
                         ],
                       ),
@@ -591,26 +694,37 @@ class _DetailTurnamenScreenState extends State<DetailTurnamenScreen>
                           minHeight: 6,
                           backgroundColor: Colors.white.withValues(alpha: 0.08),
                           valueColor: AlwaysStoppedAnimation<Color>(
-                            progress == 1.0 ? AppColors.success : AppColors.secondary,
+                            progress == 1.0
+                                ? AppColors.success
+                                : AppColors.secondary,
                           ),
                         ),
                       ),
                     ],
                   ),
                   // === TOMBOL / BANNER AKHIRI TURNAMEN ===
-                  if (t.isLocked) ...[ 
+                  if (t.isLocked) ...[
                     const SizedBox(height: 12),
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
                       decoration: BoxDecoration(
                         color: AppColors.success.withValues(alpha: 0.12),
                         borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: AppColors.success.withValues(alpha: 0.3)),
+                        border: Border.all(
+                          color: AppColors.success.withValues(alpha: 0.3),
+                        ),
                       ),
                       child: const Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(Icons.lock_rounded, size: 14, color: AppColors.success),
+                          Icon(
+                            Icons.lock_rounded,
+                            size: 14,
+                            color: AppColors.success,
+                          ),
                           SizedBox(width: 6),
                           Text(
                             'Turnamen Telah Berakhir — Skor Dikunci',
@@ -632,7 +746,10 @@ class _DetailTurnamenScreenState extends State<DetailTurnamenScreen>
                         icon: const Icon(Icons.flag_rounded, size: 16),
                         label: const Text(
                           'Akhiri Turnamen & Kunci Skor',
-                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
+                          ),
                         ),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: AppColors.warning,
@@ -676,39 +793,81 @@ class _DetailTurnamenScreenState extends State<DetailTurnamenScreen>
                 ),
                 labelColor: Colors.white,
                 unselectedLabelColor: AppColors.textSecondary,
-                labelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
-                tabs: [
-                  const Tab(
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(Icons.leaderboard_rounded, size: 16),
-                        SizedBox(width: 6),
-                        Text('Klasemen'),
+                labelStyle: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 12,
+                ),
+                tabs: _isKnockoutFormat
+                    ? [
+                        const Tab(
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.account_tree_rounded, size: 16),
+                              SizedBox(width: 6),
+                              Text('Bagan'),
+                            ],
+                          ),
+                        ),
+                        Tab(
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              const Icon(
+                                Icons.sports_esports_rounded,
+                                size: 16,
+                              ),
+                              const SizedBox(width: 6),
+                              Text('Laga (${_pertandinganList.length})'),
+                            ],
+                          ),
+                        ),
+                        Tab(
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              const Icon(Icons.groups_rounded, size: 16),
+                              const SizedBox(width: 6),
+                              Text('Peserta (${_pesertaList.length})'),
+                            ],
+                          ),
+                        ),
+                      ]
+                    : [
+                        const Tab(
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.leaderboard_rounded, size: 16),
+                              SizedBox(width: 6),
+                              Text('Klasemen'),
+                            ],
+                          ),
+                        ),
+                        Tab(
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              const Icon(
+                                Icons.sports_esports_rounded,
+                                size: 16,
+                              ),
+                              const SizedBox(width: 6),
+                              Text('Laga (${_pertandinganList.length})'),
+                            ],
+                          ),
+                        ),
+                        Tab(
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              const Icon(Icons.groups_rounded, size: 16),
+                              const SizedBox(width: 6),
+                              Text('Peserta (${_pesertaList.length})'),
+                            ],
+                          ),
+                        ),
                       ],
-                    ),
-                  ),
-                  Tab(
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const Icon(Icons.sports_esports_rounded, size: 16),
-                        const SizedBox(width: 6),
-                        Text('Laga (${_pertandinganList.length})'),
-                      ],
-                    ),
-                  ),
-                  Tab(
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const Icon(Icons.groups_rounded, size: 16),
-                        const SizedBox(width: 6),
-                        Text('Peserta (${_pesertaList.length})'),
-                      ],
-                    ),
-                  ),
-                ],
               ),
             ),
             const SizedBox(height: 12),
@@ -717,11 +876,17 @@ class _DetailTurnamenScreenState extends State<DetailTurnamenScreen>
             Expanded(
               child: TabBarView(
                 controller: _tabController,
-                children: [
-                  _buildKlasemenTab(),
-                  _buildPertandinganTab(),
-                  _buildPesertaTab(),
-                ],
+                children: _isKnockoutFormat
+                    ? [
+                        _buildBracketTab(),
+                        _buildPertandinganTab(),
+                        _buildPesertaTab(),
+                      ]
+                    : [
+                        _buildKlasemenTab(),
+                        _buildPertandinganTab(),
+                        _buildPesertaTab(),
+                      ],
               ),
             ),
           ],
@@ -730,12 +895,236 @@ class _DetailTurnamenScreenState extends State<DetailTurnamenScreen>
     );
   }
 
+  Widget _buildBracketTab() {
+    if (_pertandinganList.isEmpty) {
+      return const Center(
+        child: Text(
+          'Belum ada pertandingan',
+          style: TextStyle(color: AppColors.textSecondary),
+        ),
+      );
+    }
+
+    final legCount = _turnamen?.jumlahLeg ?? 1;
+    final matchesByRound = <String, List<PertandinganModel>>{};
+    for (final match in [
+      ..._pertandinganList,
+    ]..sort((a, b) => a.urutan.compareTo(b.urutan))) {
+      final roundName = match.babak.replaceFirst(RegExp(r'^Leg [12] - '), '');
+      matchesByRound.putIfAbsent(roundName, () => []).add(match);
+    }
+    final thirdPlaceMatches = matchesByRound.remove('Perebutan Juara 3') ?? [];
+    final roundEntries = matchesByRound.entries.toList()
+      ..sort((a, b) {
+        if (a.key == 'Final') return 1;
+        if (b.key == 'Final') return -1;
+        return a.value.first.urutan.compareTo(b.value.first.urutan);
+      });
+
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          for (final roundEntry in roundEntries) ...[
+            SizedBox(
+              width: 236,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 12, left: 2),
+                    child: Text(
+                      roundEntry.key,
+                      style: const TextStyle(
+                        color: AppColors.textPrimary,
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                  for (var i = 0; i < roundEntry.value.length; i += legCount)
+                    _buildBracketTie(
+                      roundEntry.value.skip(i).take(legCount).toList(),
+                    ),
+                  if (roundEntry.key.contains('Semifinal') &&
+                      thirdPlaceMatches.isNotEmpty) ...[
+                    const Padding(
+                      padding: EdgeInsets.only(left: 2, top: 4, bottom: 12),
+                      child: Text(
+                        'Perebutan Juara 3',
+                        style: TextStyle(
+                          color: AppColors.textPrimary,
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                    for (var i = 0; i < thirdPlaceMatches.length; i += legCount)
+                      _buildBracketTie(
+                        thirdPlaceMatches.skip(i).take(legCount).toList(),
+                      ),
+                  ],
+                ],
+              ),
+            ),
+            if (roundEntry.key != roundEntries.last.key)
+              const SizedBox(
+                width: 30,
+                height: 180,
+                child: Icon(
+                  Icons.arrow_forward_rounded,
+                  color: AppColors.textMuted,
+                  size: 20,
+                ),
+              ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBracketTie(List<PertandinganModel> legs) {
+    final firstLeg = legs.first;
+    final homeId = firstLeg.idPeserta1;
+    final awayId = firstLeg.idPeserta2;
+    final homeName = firstLeg.displayNama1 ?? 'Menunggu pemenang';
+    final awayName = firstLeg.displayNama2 ?? 'Menunggu pemenang';
+
+    var homeScore = 0;
+    var awayScore = 0;
+    var allLegsFinished = true;
+    for (final leg in legs) {
+      allLegsFinished &= leg.status == 'Selesai';
+      if (homeId != null && leg.idPeserta1 == homeId) {
+        homeScore += leg.skorPeserta1;
+        awayScore += leg.skorPeserta2;
+      } else if (awayId != null && leg.idPeserta1 == awayId) {
+        awayScore += leg.skorPeserta1;
+        homeScore += leg.skorPeserta2;
+      }
+    }
+
+    final homeWon = allLegsFinished && homeScore > awayScore;
+    final awayWon = allLegsFinished && awayScore > homeScore;
+    var resolvedHomeWon = homeWon;
+    var resolvedAwayWon = awayWon;
+    if (allLegsFinished && homeScore == awayScore) {
+      for (final leg in legs) {
+        final penalty1 = leg.skorPenaltiPeserta1;
+        final penalty2 = leg.skorPenaltiPeserta2;
+        if (penalty1 == null || penalty2 == null) continue;
+        final legHomePenalty = leg.idPeserta1 == homeId ? penalty1 : penalty2;
+        final legAwayPenalty = leg.idPeserta1 == homeId ? penalty2 : penalty1;
+        resolvedHomeWon = legHomePenalty > legAwayPenalty;
+        resolvedAwayWon = legAwayPenalty > legHomePenalty;
+        break;
+      }
+    }
+    final editableLeg = legs.firstWhere(
+      (leg) => leg.status != 'Selesai',
+      orElse: () => legs.last,
+    );
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 14),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1E293B),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: () => _openInputSkor(editableLeg),
+          child: Padding(
+            padding: const EdgeInsets.all(10),
+            child: Column(
+              children: [
+                _buildBracketParticipant(homeName, homeScore, resolvedHomeWon),
+                const Divider(color: Colors.white10, height: 16),
+                _buildBracketParticipant(awayName, awayScore, resolvedAwayWon),
+                if (legs.length > 1) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    legs
+                        .map((leg) => '${leg.skorPeserta1}-${leg.skorPeserta2}')
+                        .join(' · '),
+                    style: const TextStyle(
+                      color: AppColors.textMuted,
+                      fontSize: 10,
+                    ),
+                  ),
+                ],
+                for (final leg in legs)
+                  if (leg.skorPenaltiPeserta1 != null &&
+                      leg.skorPenaltiPeserta2 != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 5),
+                      child: Text(
+                        'Penalti ${leg.skorPenaltiPeserta1}-${leg.skorPenaltiPeserta2}',
+                        style: const TextStyle(
+                          color: AppColors.warning,
+                          fontSize: 10,
+                        ),
+                      ),
+                    ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBracketParticipant(String name, int score, bool isWinner) {
+    return Row(
+      children: [
+        if (isWinner)
+          const Padding(
+            padding: EdgeInsets.only(right: 5),
+            child: Icon(
+              Icons.emoji_events_rounded,
+              color: Color(0xFFFFD700),
+              size: 14,
+            ),
+          ),
+        Expanded(
+          child: Text(
+            name,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: isWinner ? const Color(0xFFFFD700) : AppColors.textPrimary,
+              fontSize: 12,
+              fontWeight: isWinner ? FontWeight.bold : FontWeight.w600,
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Text(
+          '$score',
+          style: TextStyle(
+            color: isWinner ? Colors.white : AppColors.textSecondary,
+            fontSize: 13,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+      ],
+    );
+  }
+
   // === TAB KLASEMEN / STANDINGS YANG DIPERBAGUS ===
   Widget _buildKlasemenTab() {
     final klasemen = _calculateKlasemen();
     if (klasemen.isEmpty) {
       return const Center(
-        child: Text('Belum ada data klasemen', style: TextStyle(color: AppColors.textSecondary)),
+        child: Text(
+          'Belum ada data klasemen',
+          style: TextStyle(color: AppColors.textSecondary),
+        ),
       );
     }
 
@@ -760,52 +1149,140 @@ class _DetailTurnamenScreenState extends State<DetailTurnamenScreen>
             children: [
               // Header Table Bar
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 10,
+                ),
                 decoration: BoxDecoration(
                   color: const Color(0xFF0F172A),
-                  borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-                  border: Border(bottom: BorderSide(color: Colors.white.withValues(alpha: 0.08))),
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(16),
+                  ),
+                  border: Border(
+                    bottom: BorderSide(
+                      color: Colors.white.withValues(alpha: 0.08),
+                    ),
+                  ),
                 ),
                 child: const Row(
                   children: [
                     SizedBox(
                       width: 24,
-                      child: Text('#', style: TextStyle(color: AppColors.textSecondary, fontWeight: FontWeight.bold, fontSize: 11)),
+                      child: Text(
+                        '#',
+                        style: TextStyle(
+                          color: AppColors.textSecondary,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 11,
+                        ),
+                      ),
                     ),
                     Expanded(
-                      child: Text('KLUB / PESERTA', style: TextStyle(color: AppColors.textSecondary, fontWeight: FontWeight.bold, fontSize: 11, letterSpacing: 0.5)),
+                      child: Text(
+                        'KLUB / PESERTA',
+                        style: TextStyle(
+                          color: AppColors.textSecondary,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 11,
+                          letterSpacing: 0.5,
+                        ),
+                      ),
                     ),
                     SizedBox(
                       width: 20,
-                      child: Text('M', textAlign: TextAlign.center, style: TextStyle(color: AppColors.textSecondary, fontWeight: FontWeight.bold, fontSize: 11)),
+                      child: Text(
+                        'M',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: AppColors.textSecondary,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 11,
+                        ),
+                      ),
                     ),
                     SizedBox(
                       width: 20,
-                      child: Text('W', textAlign: TextAlign.center, style: TextStyle(color: AppColors.success, fontWeight: FontWeight.bold, fontSize: 11)),
+                      child: Text(
+                        'W',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: AppColors.success,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 11,
+                        ),
+                      ),
                     ),
                     SizedBox(
                       width: 20,
-                      child: Text('D', textAlign: TextAlign.center, style: TextStyle(color: AppColors.secondary, fontWeight: FontWeight.bold, fontSize: 11)),
+                      child: Text(
+                        'D',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: AppColors.secondary,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 11,
+                        ),
+                      ),
                     ),
                     SizedBox(
                       width: 20,
-                      child: Text('L', textAlign: TextAlign.center, style: TextStyle(color: AppColors.error, fontWeight: FontWeight.bold, fontSize: 11)),
+                      child: Text(
+                        'L',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: AppColors.error,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 11,
+                        ),
+                      ),
                     ),
                     SizedBox(
                       width: 22,
-                      child: Text('GF', textAlign: TextAlign.center, style: TextStyle(color: AppColors.textSecondary, fontWeight: FontWeight.bold, fontSize: 11)),
+                      child: Text(
+                        'GF',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: AppColors.textSecondary,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 11,
+                        ),
+                      ),
                     ),
                     SizedBox(
                       width: 22,
-                      child: Text('GA', textAlign: TextAlign.center, style: TextStyle(color: AppColors.textSecondary, fontWeight: FontWeight.bold, fontSize: 11)),
+                      child: Text(
+                        'GA',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: AppColors.textSecondary,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 11,
+                        ),
+                      ),
                     ),
                     SizedBox(
                       width: 26,
-                      child: Text('GD', textAlign: TextAlign.center, style: TextStyle(color: AppColors.textSecondary, fontWeight: FontWeight.bold, fontSize: 11)),
+                      child: Text(
+                        'GD',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: AppColors.textSecondary,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 11,
+                        ),
+                      ),
                     ),
                     SizedBox(
                       width: 30,
-                      child: Text('PTS', textAlign: TextAlign.center, style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 11)),
+                      child: Text(
+                        'PTS',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 11,
+                        ),
+                      ),
                     ),
                   ],
                 ),
@@ -828,10 +1305,19 @@ class _DetailTurnamenScreenState extends State<DetailTurnamenScreen>
                     height: 20,
                     alignment: Alignment.center,
                     decoration: const BoxDecoration(
-                      gradient: LinearGradient(colors: [Color(0xFFFFD700), Color(0xFFF59E0B)]),
+                      gradient: LinearGradient(
+                        colors: [Color(0xFFFFD700), Color(0xFFF59E0B)],
+                      ),
                       shape: BoxShape.circle,
                     ),
-                    child: const Text('1', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 11)),
+                    child: const Text(
+                      '1',
+                      style: TextStyle(
+                        color: Colors.black,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 11,
+                      ),
+                    ),
                   );
                 } else if (rank == 2) {
                   rowBgColor = const Color(0xFFC0C0C0).withValues(alpha: 0.03);
@@ -840,10 +1326,19 @@ class _DetailTurnamenScreenState extends State<DetailTurnamenScreen>
                     height: 20,
                     alignment: Alignment.center,
                     decoration: const BoxDecoration(
-                      gradient: LinearGradient(colors: [Color(0xFFE2E8F0), Color(0xFF94A3B8)]),
+                      gradient: LinearGradient(
+                        colors: [Color(0xFFE2E8F0), Color(0xFF94A3B8)],
+                      ),
                       shape: BoxShape.circle,
                     ),
-                    child: const Text('2', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 11)),
+                    child: const Text(
+                      '2',
+                      style: TextStyle(
+                        color: Colors.black,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 11,
+                      ),
+                    ),
                   );
                 } else if (rank == 3) {
                   rowBgColor = const Color(0xFFCD7F32).withValues(alpha: 0.03);
@@ -852,36 +1347,71 @@ class _DetailTurnamenScreenState extends State<DetailTurnamenScreen>
                     height: 20,
                     alignment: Alignment.center,
                     decoration: const BoxDecoration(
-                      gradient: LinearGradient(colors: [Color(0xFFF97316), Color(0xFFB45309)]),
+                      gradient: LinearGradient(
+                        colors: [Color(0xFFF97316), Color(0xFFB45309)],
+                      ),
                       shape: BoxShape.circle,
                     ),
-                    child: const Text('3', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 11)),
+                    child: const Text(
+                      '3',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 11,
+                      ),
+                    ),
                   );
                 } else {
-                  rankWidget = Text('$rank', textAlign: TextAlign.center, style: const TextStyle(color: AppColors.textSecondary, fontWeight: FontWeight.w600, fontSize: 11));
+                  rankWidget = Text(
+                    '$rank',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: AppColors.textSecondary,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 11,
+                    ),
+                  );
                 }
 
                 return Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 10,
+                  ),
                   decoration: BoxDecoration(
-                    color: rowBgColor ?? (index.isEven ? Colors.white.withValues(alpha: 0.015) : Colors.transparent),
-                    borderRadius: isLast ? const BorderRadius.vertical(bottom: Radius.circular(16)) : null,
-                    border: isLast ? null : Border(bottom: BorderSide(color: Colors.white.withValues(alpha: 0.04))),
+                    color:
+                        rowBgColor ??
+                        (index.isEven
+                            ? Colors.white.withValues(alpha: 0.015)
+                            : Colors.transparent),
+                    borderRadius: isLast
+                        ? const BorderRadius.vertical(
+                            bottom: Radius.circular(16),
+                          )
+                        : null,
+                    border: isLast
+                        ? null
+                        : Border(
+                            bottom: BorderSide(
+                              color: Colors.white.withValues(alpha: 0.04),
+                            ),
+                          ),
                   ),
                   child: Row(
                     children: [
                       // Posisi
-                      SizedBox(
-                        width: 24,
-                        child: rankWidget,
-                      ),
+                      SizedBox(width: 24, child: rankWidget),
                       // Nama Peserta / Tim
                       Expanded(
                         child: Text(
                           item.namaPeserta,
                           style: TextStyle(
-                            color: rank == 1 ? const Color(0xFFFFD700) : AppColors.textPrimary,
-                            fontWeight: rank <= 3 ? FontWeight.bold : FontWeight.w600,
+                            color: rank == 1
+                                ? const Color(0xFFFFD700)
+                                : AppColors.textPrimary,
+                            fontWeight: rank <= 3
+                                ? FontWeight.bold
+                                : FontWeight.w600,
                             fontSize: 12,
                           ),
                           maxLines: 1,
@@ -894,7 +1424,11 @@ class _DetailTurnamenScreenState extends State<DetailTurnamenScreen>
                         child: Text(
                           '${item.main}',
                           textAlign: TextAlign.center,
-                          style: const TextStyle(color: AppColors.textPrimary, fontSize: 11, fontWeight: FontWeight.w500),
+                          style: const TextStyle(
+                            color: AppColors.textPrimary,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w500,
+                          ),
                         ),
                       ),
                       // Menang (W)
@@ -903,7 +1437,11 @@ class _DetailTurnamenScreenState extends State<DetailTurnamenScreen>
                         child: Text(
                           '${item.menang}',
                           textAlign: TextAlign.center,
-                          style: const TextStyle(color: AppColors.success, fontWeight: FontWeight.bold, fontSize: 11),
+                          style: const TextStyle(
+                            color: AppColors.success,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 11,
+                          ),
                         ),
                       ),
                       // Seri (D)
@@ -912,7 +1450,11 @@ class _DetailTurnamenScreenState extends State<DetailTurnamenScreen>
                         child: Text(
                           '${item.seri}',
                           textAlign: TextAlign.center,
-                          style: const TextStyle(color: AppColors.secondary, fontWeight: FontWeight.w600, fontSize: 11),
+                          style: const TextStyle(
+                            color: AppColors.secondary,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 11,
+                          ),
                         ),
                       ),
                       // Kalah (L)
@@ -921,7 +1463,11 @@ class _DetailTurnamenScreenState extends State<DetailTurnamenScreen>
                         child: Text(
                           '${item.kalah}',
                           textAlign: TextAlign.center,
-                          style: const TextStyle(color: AppColors.error, fontWeight: FontWeight.w600, fontSize: 11),
+                          style: const TextStyle(
+                            color: AppColors.error,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 11,
+                          ),
                         ),
                       ),
                       // Gol Memasukkan (GF)
@@ -930,7 +1476,11 @@ class _DetailTurnamenScreenState extends State<DetailTurnamenScreen>
                         child: Text(
                           '${item.gm}',
                           textAlign: TextAlign.center,
-                          style: const TextStyle(color: AppColors.textPrimary, fontSize: 11, fontWeight: FontWeight.w500),
+                          style: const TextStyle(
+                            color: AppColors.textPrimary,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w500,
+                          ),
                         ),
                       ),
                       // Gol Kemasukan (GA)
@@ -939,7 +1489,11 @@ class _DetailTurnamenScreenState extends State<DetailTurnamenScreen>
                         child: Text(
                           '${item.gk}',
                           textAlign: TextAlign.center,
-                          style: const TextStyle(color: AppColors.textMuted, fontSize: 11, fontWeight: FontWeight.w500),
+                          style: const TextStyle(
+                            color: AppColors.textMuted,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w500,
+                          ),
                         ),
                       ),
                       // Selisih Gol (GD)
@@ -949,7 +1503,11 @@ class _DetailTurnamenScreenState extends State<DetailTurnamenScreen>
                           item.sg > 0 ? '+${item.sg}' : '${item.sg}',
                           textAlign: TextAlign.center,
                           style: TextStyle(
-                            color: item.sg > 0 ? AppColors.success : (item.sg < 0 ? AppColors.error : AppColors.textSecondary),
+                            color: item.sg > 0
+                                ? AppColors.success
+                                : (item.sg < 0
+                                      ? AppColors.error
+                                      : AppColors.textSecondary),
                             fontWeight: FontWeight.w600,
                             fontSize: 11,
                           ),
@@ -962,9 +1520,16 @@ class _DetailTurnamenScreenState extends State<DetailTurnamenScreen>
                           padding: const EdgeInsets.symmetric(vertical: 2),
                           decoration: BoxDecoration(
                             gradient: rank == 1
-                                ? const LinearGradient(colors: [Color(0xFF6366F1), Color(0xFF4F46E5)])
+                                ? const LinearGradient(
+                                    colors: [
+                                      Color(0xFF6366F1),
+                                      Color(0xFF4F46E5),
+                                    ],
+                                  )
                                 : null,
-                            color: rank != 1 ? AppColors.primary.withValues(alpha: 0.2) : null,
+                            color: rank != 1
+                                ? AppColors.primary.withValues(alpha: 0.2)
+                                : null,
                             borderRadius: BorderRadius.circular(5),
                           ),
                           child: Text(
@@ -1000,11 +1565,19 @@ class _DetailTurnamenScreenState extends State<DetailTurnamenScreen>
             children: [
               Row(
                 children: [
-                  Icon(Icons.info_outline_rounded, size: 15, color: AppColors.secondary),
+                  Icon(
+                    Icons.info_outline_rounded,
+                    size: 15,
+                    color: AppColors.secondary,
+                  ),
                   SizedBox(width: 6),
                   Text(
                     'Keterangan & Sistem Poin',
-                    style: TextStyle(color: AppColors.textPrimary, fontSize: 12, fontWeight: FontWeight.bold),
+                    style: TextStyle(
+                      color: AppColors.textPrimary,
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                 ],
               ),
@@ -1013,10 +1586,37 @@ class _DetailTurnamenScreenState extends State<DetailTurnamenScreen>
                 spacing: 10,
                 runSpacing: 4,
                 children: [
-                  Text('• M = Main', style: TextStyle(color: AppColors.textSecondary, fontSize: 11)),
-                  Text('• W = Menang (3 Poin)', style: TextStyle(color: AppColors.success, fontSize: 11, fontWeight: FontWeight.w600)),
-                  Text('• D = Seri (1 Poin)', style: TextStyle(color: AppColors.secondary, fontSize: 11, fontWeight: FontWeight.w600)),
-                  Text('• L = Kalah (0 Poin)', style: TextStyle(color: AppColors.error, fontSize: 11, fontWeight: FontWeight.w600)),
+                  Text(
+                    '• M = Main',
+                    style: TextStyle(
+                      color: AppColors.textSecondary,
+                      fontSize: 11,
+                    ),
+                  ),
+                  Text(
+                    '• W = Menang (3 Poin)',
+                    style: TextStyle(
+                      color: AppColors.success,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  Text(
+                    '• D = Seri (1 Poin)',
+                    style: TextStyle(
+                      color: AppColors.secondary,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  Text(
+                    '• L = Kalah (0 Poin)',
+                    style: TextStyle(
+                      color: AppColors.error,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                 ],
               ),
               SizedBox(height: 6),
@@ -1024,10 +1624,35 @@ class _DetailTurnamenScreenState extends State<DetailTurnamenScreen>
                 spacing: 10,
                 runSpacing: 4,
                 children: [
-                  Text('• GF = Gol Masuk', style: TextStyle(color: AppColors.textSecondary, fontSize: 11)),
-                  Text('• GA = Gol Kebobolan', style: TextStyle(color: AppColors.textSecondary, fontSize: 11)),
-                  Text('• GD = Selisih Gol (GF - GA)', style: TextStyle(color: AppColors.textSecondary, fontSize: 11)),
-                  Text('• PTS = Total Poin', style: TextStyle(color: AppColors.primaryLight, fontSize: 11, fontWeight: FontWeight.bold)),
+                  Text(
+                    '• GF = Gol Masuk',
+                    style: TextStyle(
+                      color: AppColors.textSecondary,
+                      fontSize: 11,
+                    ),
+                  ),
+                  Text(
+                    '• GA = Gol Kebobolan',
+                    style: TextStyle(
+                      color: AppColors.textSecondary,
+                      fontSize: 11,
+                    ),
+                  ),
+                  Text(
+                    '• GD = Selisih Gol (GF - GA)',
+                    style: TextStyle(
+                      color: AppColors.textSecondary,
+                      fontSize: 11,
+                    ),
+                  ),
+                  Text(
+                    '• PTS = Total Poin',
+                    style: TextStyle(
+                      color: AppColors.primaryLight,
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
                 ],
               ),
             ],
@@ -1041,15 +1666,35 @@ class _DetailTurnamenScreenState extends State<DetailTurnamenScreen>
   Widget _buildPertandinganTab() {
     if (_pertandinganList.isEmpty) {
       return const Center(
-        child: Text('Belum ada pertandingan', style: TextStyle(color: AppColors.textSecondary)),
+        child: Text(
+          'Belum ada pertandingan',
+          style: TextStyle(color: AppColors.textSecondary),
+        ),
       );
     }
 
     final Map<String, List<PertandinganModel>> grouped = {};
     for (final match in _pertandinganList) {
-      grouped.putIfAbsent(match.babak, () => []).add(match);
+      final roundName = _isKnockoutFormat
+          ? match.babak.replaceFirst(RegExp(r'^Leg [12] - '), '')
+          : match.babak;
+      grouped.putIfAbsent(roundName, () => []).add(match);
     }
 
+    if (_isKnockoutFormat) {
+      final rounds = grouped.entries.toList()
+        ..sort((a, b) {
+          if (a.key == 'Final' && b.key == 'Perebutan Juara 3') return 1;
+          if (a.key == 'Perebutan Juara 3' && b.key == 'Final') return -1;
+          return a.value.first.urutan.compareTo(b.value.first.urutan);
+        });
+      return _buildGroupedMatches(Map.fromEntries(rounds));
+    }
+
+    return _buildGroupedMatches(grouped);
+  }
+
+  Widget _buildGroupedMatches(Map<String, List<PertandinganModel>> grouped) {
     return ListView.builder(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
       itemCount: grouped.keys.length,
@@ -1070,7 +1715,11 @@ class _DetailTurnamenScreenState extends State<DetailTurnamenScreen>
                       color: AppColors.secondary.withValues(alpha: 0.15),
                       borderRadius: BorderRadius.circular(6),
                     ),
-                    child: const Icon(Icons.sports_esports_rounded, size: 16, color: AppColors.secondary),
+                    child: const Icon(
+                      Icons.sports_esports_rounded,
+                      size: 16,
+                      color: AppColors.secondary,
+                    ),
                   ),
                   const SizedBox(width: 8),
                   Text(
@@ -1084,7 +1733,10 @@ class _DetailTurnamenScreenState extends State<DetailTurnamenScreen>
                   const Spacer(),
                   Text(
                     '${matchesInRound.length} Laga',
-                    style: const TextStyle(color: AppColors.textMuted, fontSize: 11),
+                    style: const TextStyle(
+                      color: AppColors.textMuted,
+                      fontSize: 11,
+                    ),
                   ),
                 ],
               ),
@@ -1097,11 +1749,23 @@ class _DetailTurnamenScreenState extends State<DetailTurnamenScreen>
   }
 
   Widget _buildMatchCard(PertandinganModel match) {
-    final p1Name = match.namaPeserta1 ?? 'TBD';
-    final p2Name = match.namaPeserta2 ?? 'TBD';
+    final p1Name = match.displayNama1 ?? 'TBD';
+    final p2Name = match.displayNama2 ?? 'TBD';
     final isFinished = match.status == 'Selesai';
-    final isP1Winner = isFinished && match.skorPeserta1 > match.skorPeserta2;
-    final isP2Winner = isFinished && match.skorPeserta2 > match.skorPeserta1;
+    final isP1Winner =
+        isFinished &&
+        (match.skorPeserta1 > match.skorPeserta2 ||
+            (match.skorPeserta1 == match.skorPeserta2 &&
+                match.skorPenaltiPeserta1 != null &&
+                match.skorPenaltiPeserta2 != null &&
+                match.skorPenaltiPeserta1! > match.skorPenaltiPeserta2!));
+    final isP2Winner =
+        isFinished &&
+        (match.skorPeserta2 > match.skorPeserta1 ||
+            (match.skorPeserta1 == match.skorPeserta2 &&
+                match.skorPenaltiPeserta1 != null &&
+                match.skorPenaltiPeserta2 != null &&
+                match.skorPenaltiPeserta2! > match.skorPenaltiPeserta1!));
     final isLocked = _turnamen?.isLocked == true;
 
     Color badgeColor = AppColors.textMuted;
@@ -1117,8 +1781,8 @@ class _DetailTurnamenScreenState extends State<DetailTurnamenScreen>
           color: isLocked
               ? Colors.white.withValues(alpha: 0.04)
               : isFinished
-                  ? AppColors.success.withValues(alpha: 0.2)
-                  : Colors.white.withValues(alpha: 0.06),
+              ? AppColors.success.withValues(alpha: 0.2)
+              : Colors.white.withValues(alpha: 0.06),
         ),
         boxShadow: [
           BoxShadow(
@@ -1142,12 +1806,19 @@ class _DetailTurnamenScreenState extends State<DetailTurnamenScreen>
                   children: [
                     Text(
                       'Laga #${match.urutan}',
-                      style: const TextStyle(color: AppColors.textMuted, fontSize: 11, fontWeight: FontWeight.w600),
+                      style: const TextStyle(
+                        color: AppColors.textMuted,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                     Row(
                       children: [
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 2,
+                          ),
                           decoration: BoxDecoration(
                             color: badgeColor.withValues(alpha: 0.15),
                             borderRadius: BorderRadius.circular(6),
@@ -1163,20 +1834,51 @@ class _DetailTurnamenScreenState extends State<DetailTurnamenScreen>
                         ),
                         const SizedBox(width: 6),
                         if (isLocked)
-                          const Icon(Icons.lock_rounded, size: 14, color: AppColors.textMuted)
+                          const Icon(
+                            Icons.lock_rounded,
+                            size: 14,
+                            color: AppColors.textMuted,
+                          )
                         else
-                          const Icon(Icons.edit_note_rounded, size: 16, color: AppColors.secondary),
+                          const Icon(
+                            Icons.edit_note_rounded,
+                            size: 16,
+                            color: AppColors.secondary,
+                          ),
                       ],
                     ),
                   ],
                 ),
                 const SizedBox(height: 10),
-                _buildParticipantRow(p1Name, match.skorPeserta1, isP1Winner, isFinished),
+                _buildParticipantRow(
+                  p1Name,
+                  match.skorPeserta1,
+                  isP1Winner,
+                  isFinished,
+                ),
                 const Padding(
                   padding: EdgeInsets.symmetric(vertical: 6),
                   child: Divider(color: Colors.white10, height: 1),
                 ),
-                _buildParticipantRow(p2Name, match.skorPeserta2, isP2Winner, isFinished),
+                _buildParticipantRow(
+                  p2Name,
+                  match.skorPeserta2,
+                  isP2Winner,
+                  isFinished,
+                ),
+                if (match.skorPenaltiPeserta1 != null &&
+                    match.skorPenaltiPeserta2 != null) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    'Adu penalti ${match.skorPenaltiPeserta1}-'
+                    '${match.skorPenaltiPeserta2}',
+                    style: const TextStyle(
+                      color: AppColors.warning,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
@@ -1185,7 +1887,12 @@ class _DetailTurnamenScreenState extends State<DetailTurnamenScreen>
     );
   }
 
-  Widget _buildParticipantRow(String name, int score, bool isWinner, bool isFinished) {
+  Widget _buildParticipantRow(
+    String name,
+    int score,
+    bool isWinner,
+    bool isFinished,
+  ) {
     return Row(
       children: [
         Expanded(
@@ -1194,7 +1901,11 @@ class _DetailTurnamenScreenState extends State<DetailTurnamenScreen>
               if (isWinner)
                 const Padding(
                   padding: EdgeInsets.only(right: 6),
-                  child: Icon(Icons.emoji_events_rounded, color: Color(0xFFFFD700), size: 16),
+                  child: Icon(
+                    Icons.emoji_events_rounded,
+                    color: Color(0xFFFFD700),
+                    size: 16,
+                  ),
                 ),
               Expanded(
                 child: Text(
@@ -1202,7 +1913,9 @@ class _DetailTurnamenScreenState extends State<DetailTurnamenScreen>
                   style: TextStyle(
                     color: isWinner
                         ? const Color(0xFFFFD700)
-                        : (isFinished ? AppColors.textSecondary : AppColors.textPrimary),
+                        : (isFinished
+                              ? AppColors.textSecondary
+                              : AppColors.textPrimary),
                     fontSize: 13,
                     fontWeight: isWinner ? FontWeight.bold : FontWeight.w600,
                   ),
@@ -1220,7 +1933,9 @@ class _DetailTurnamenScreenState extends State<DetailTurnamenScreen>
                 : const Color(0xFF0F172A),
             borderRadius: BorderRadius.circular(8),
             border: Border.all(
-              color: isWinner ? AppColors.primary : Colors.white.withValues(alpha: 0.05),
+              color: isWinner
+                  ? AppColors.primary
+                  : Colors.white.withValues(alpha: 0.05),
             ),
           ),
           child: Text(
@@ -1240,7 +1955,10 @@ class _DetailTurnamenScreenState extends State<DetailTurnamenScreen>
   Widget _buildPesertaTab() {
     if (_pesertaList.isEmpty) {
       return const Center(
-        child: Text('Belum ada peserta terdaftar', style: TextStyle(color: AppColors.textSecondary)),
+        child: Text(
+          'Belum ada peserta terdaftar',
+          style: TextStyle(color: AppColors.textSecondary),
+        ),
       );
     }
 
@@ -1289,7 +2007,11 @@ class _DetailTurnamenScreenState extends State<DetailTurnamenScreen>
                   ),
                 ),
               ),
-              const Icon(Icons.shield_outlined, size: 18, color: AppColors.textMuted),
+              const Icon(
+                Icons.shield_outlined,
+                size: 18,
+                color: AppColors.textMuted,
+              ),
             ],
           ),
         );

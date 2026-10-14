@@ -38,10 +38,7 @@ class AuthService {
   }) {
     return _sendRequest(
       endpoint: 'login',
-      body: {
-        'email': email,
-        'password': password,
-      },
+      body: {'email': email, 'password': password},
       expectedStatus: 200,
       defaultErrorMessage: 'Gagal login.',
     );
@@ -52,9 +49,7 @@ class AuthService {
   }) {
     return _sendRequest(
       endpoint: 'google',
-      body: {
-        'id_token': idToken,
-      },
+      body: {'id_token': idToken},
       expectedStatus: 200,
       defaultErrorMessage: 'Gagal login dengan Google.',
     );
@@ -65,34 +60,53 @@ class AuthService {
   }) {
     return _sendRequest(
       endpoint: 'resend-verification',
-      body: {
-        'email': email,
-      },
+      body: {'email': email},
       expectedStatus: 200,
       defaultErrorMessage: 'Gagal mengirim ulang email verifikasi.',
     );
   }
 
+  static Future<Map<String, dynamic>> checkVerificationStatus({
+    required String userId,
+  }) {
+    return _sendRequest(
+      endpoint: 'verification-status/$userId',
+      method: 'GET',
+      expectedStatus: 200,
+      defaultErrorMessage: 'Gagal memeriksa status verifikasi.',
+    );
+  }
+
   static Future<Map<String, dynamic>> _sendRequest({
     required String endpoint,
-    required Map<String, dynamic> body,
+    Map<String, dynamic>? body,
+    String method = 'POST',
     required int expectedStatus,
     required String defaultErrorMessage,
   }) async {
     try {
       final baseUrl = await ApiConfig.autoDetectBaseUrl();
+      final requestBody = <String, dynamic>{...?body};
+
+      if (endpoint == 'register' || endpoint == 'resend-verification') {
+        requestBody['client'] = Uri.parse(baseUrl).host == '10.0.2.2'
+            ? 'emulator'
+            : 'device';
+      }
 
       final authUrl = baseUrl.endsWith('/api')
           ? '$baseUrl/auth/$endpoint'
           : '$baseUrl/api/auth/$endpoint';
 
-      final response = await http
-          .post(
-        Uri.parse(authUrl),
-        headers: _headers,
-        body: jsonEncode(body),
-      )
-          .timeout(const Duration(seconds: 15));
+      final response =
+          await (method == 'GET'
+                  ? http.get(Uri.parse(authUrl), headers: _headers)
+                  : http.post(
+                      Uri.parse(authUrl),
+                      headers: _headers,
+                      body: jsonEncode(requestBody),
+                    ))
+              .timeout(const Duration(seconds: 15));
 
       Map<String, dynamic> data;
 

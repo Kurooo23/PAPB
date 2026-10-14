@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+
 import '../../core/config/api_config.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/utils/avatar_helper.dart';
@@ -10,6 +11,7 @@ import '../../data/services/local_tournament_service.dart';
 import '../auth/login_screen.dart';
 import '../turnamen/buat_turnamen_screen.dart';
 import '../turnamen/detail_turnamen_screen.dart';
+
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -28,17 +30,14 @@ class _HomeScreenState extends State<HomeScreen> {
   Map<String, dynamic>? _currentUser;
   int _currentNavIndex = 0; // 0 = Turnamen Aktif, 1 = Riwayat
   String _selectedFilter = 'Semua';
-  String _selectedSourceFilter = 'Semua'; // 'Semua', 'Privat (Lokal)', 'Publik (Server)'
+  String _selectedSourceFilter =
+      'Semua'; // 'Semua', 'Privat (Lokal)', 'Publik (Server)'
   bool _isLoading = true;
   String? _errorMessage;
   bool _backendOfflineNotice = false;
   List<TurnamenModel> _tournaments = [];
 
-  final List<String> _filters = const [
-    'Semua',
-    'Akan Datang',
-    'Berlangsung',
-  ];
+  final List<String> _filters = const ['Semua', 'Akan Datang', 'Berlangsung'];
 
   final List<String> _sourceFilters = const [
     'Semua',
@@ -134,7 +133,9 @@ class _HomeScreenState extends State<HomeScreen> {
           _isLoading = false;
           _backendOfflineNotice = (backendError != null);
           // Hanya tampilkan error blocking jika daftar kosong dan filter bukan privat saja
-          if (combined.isEmpty && backendError != null && _selectedSourceFilter != '🔒 Privat (Lokal)') {
+          if (combined.isEmpty &&
+              backendError != null &&
+              _selectedSourceFilter != '🔒 Privat (Lokal)') {
             _errorMessage = backendError;
           } else {
             _errorMessage = null;
@@ -185,7 +186,10 @@ class _HomeScreenState extends State<HomeScreen> {
           children: [
             Icon(Icons.dns_rounded, color: AppColors.secondary, size: 22),
             SizedBox(width: 8),
-            Text('Pengaturan Server API', style: TextStyle(color: AppColors.textPrimary, fontSize: 16)),
+            Text(
+              'Pengaturan Server API',
+              style: TextStyle(color: AppColors.textPrimary, fontSize: 16),
+            ),
           ],
         ),
         content: Column(
@@ -199,7 +203,10 @@ class _HomeScreenState extends State<HomeScreen> {
             const SizedBox(height: 10),
             TextField(
               controller: controller,
-              style: const TextStyle(color: AppColors.textPrimary, fontSize: 13),
+              style: const TextStyle(
+                color: AppColors.textPrimary,
+                fontSize: 13,
+              ),
               decoration: InputDecoration(
                 filled: true,
                 fillColor: AppColors.bgCard,
@@ -209,13 +216,20 @@ class _HomeScreenState extends State<HomeScreen> {
                   borderRadius: BorderRadius.circular(10),
                   borderSide: BorderSide.none,
                 ),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 10,
+                ),
               ),
             ),
             const SizedBox(height: 10),
             const Text(
               '• Emulator Android: http://10.0.2.2:3000/api\n• Windows/Web: http://localhost:3000/api\n• HP Fisik: http://IP_LAPTOP:3000/api',
-              style: TextStyle(color: AppColors.textMuted, fontSize: 11, height: 1.4),
+              style: TextStyle(
+                color: AppColors.textMuted,
+                fontSize: 11,
+                height: 1.4,
+              ),
             ),
           ],
         ),
@@ -226,7 +240,10 @@ class _HomeScreenState extends State<HomeScreen> {
               Navigator.pop(ctx);
               _loadTournaments();
             },
-            child: const Text('Reset Default', style: TextStyle(color: AppColors.textSecondary)),
+            child: const Text(
+              'Reset Default',
+              style: TextStyle(color: AppColors.textSecondary),
+            ),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary),
@@ -257,7 +274,9 @@ class _HomeScreenState extends State<HomeScreen> {
               backgroundColor: AppColors.primary.withValues(alpha: 0.2),
               child: Icon(
                 _currentUser != null
-                    ? AvatarHelper.getIcon(_currentUser!['avatar_index'] as int?)
+                    ? AvatarHelper.getIcon(
+                        _currentUser!['avatar_index'] as int?,
+                      )
                     : Icons.person_rounded,
                 color: AppColors.secondary,
                 size: 20,
@@ -266,7 +285,11 @@ class _HomeScreenState extends State<HomeScreen> {
             const SizedBox(width: 10),
             Text(
               _currentUser != null ? 'Profil Pengguna' : 'Belum Masuk Akun',
-              style: const TextStyle(color: AppColors.textPrimary, fontSize: 16, fontWeight: FontWeight.bold),
+              style: const TextStyle(
+                color: AppColors.textPrimary,
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+              ),
             ),
           ],
         ),
@@ -286,24 +309,40 @@ class _HomeScreenState extends State<HomeScreen> {
               const SizedBox(height: 4),
               Text(
                 _currentUser!['email']?.toString() ?? '',
-                style: const TextStyle(color: AppColors.textSecondary, fontSize: 13),
+                style: const TextStyle(
+                  color: AppColors.textSecondary,
+                  fontSize: 13,
+                ),
               ),
               const SizedBox(height: 12),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 6,
+                ),
                 decoration: BoxDecoration(
                   color: const Color(0xFF10B981).withValues(alpha: 0.15),
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: const Color(0xFF10B981).withValues(alpha: 0.3)),
+                  border: Border.all(
+                    color: const Color(0xFF10B981).withValues(alpha: 0.3),
+                  ),
                 ),
                 child: const Row(
                   children: [
-                    Icon(Icons.check_circle_rounded, size: 14, color: Color(0xFF10B981)),
+                    Icon(
+                      Icons.check_circle_rounded,
+                      size: 14,
+                      color: Color(0xFF10B981),
+                    ),
                     SizedBox(width: 6),
                     Expanded(
                       child: Text(
                         'Sesi Login Tersimpan di HP (Offline-Ready)',
-                        style: TextStyle(color: Color(0xFF10B981), fontSize: 11, fontWeight: FontWeight.bold),
+                        style: TextStyle(
+                          color: Color(0xFF10B981),
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                     ),
                   ],
@@ -324,6 +363,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 const storage = FlutterSecureStorage();
 
                 await storage.delete(key: 'user_token');
+                await storage.delete(key: 'refresh_token');
                 await DatabaseHelper.instance.clearUserSession();
 
                 if (ctx.mounted) Navigator.pop(ctx);
@@ -338,25 +378,37 @@ class _HomeScreenState extends State<HomeScreen> {
 
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
-                    content: Text('Anda telah keluar akun dan kembali ke mode tamu.'),
+                    content: Text(
+                      'Anda telah keluar akun dan kembali ke mode tamu.',
+                    ),
                     backgroundColor: AppColors.primary,
                   ),
                 );
               },
-              child: const Text('Keluar Akun', style: TextStyle(color: AppColors.error)),
+              child: const Text(
+                'Keluar Akun',
+                style: TextStyle(color: AppColors.error),
+              ),
             ),
             ElevatedButton(
-              style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+              ),
               onPressed: () => Navigator.pop(ctx),
               child: const Text('Tutup', style: TextStyle(color: Colors.white)),
             ),
           ] else ...[
             TextButton(
               onPressed: () => Navigator.pop(ctx),
-              child: const Text('Batal', style: TextStyle(color: AppColors.textSecondary)),
+              child: const Text(
+                'Batal',
+                style: TextStyle(color: AppColors.textSecondary),
+              ),
             ),
             ElevatedButton(
-              style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+              ),
               onPressed: () {
                 Navigator.pop(ctx);
                 Navigator.push(
@@ -364,7 +416,10 @@ class _HomeScreenState extends State<HomeScreen> {
                   MaterialPageRoute(builder: (context) => const LoginScreen()),
                 ).then((_) => _loadUserSession());
               },
-              child: const Text('Login Sekarang', style: TextStyle(color: Colors.white)),
+              child: const Text(
+                'Login Sekarang',
+                style: TextStyle(color: Colors.white),
+              ),
             ),
           ],
         ],
@@ -404,13 +459,19 @@ class _HomeScreenState extends State<HomeScreen> {
                   : Colors.white.withValues(alpha: 0.1),
               child: Icon(
                 _currentUser != null
-                    ? AvatarHelper.getIcon(_currentUser!['avatar_index'] as int?)
+                    ? AvatarHelper.getIcon(
+                        _currentUser!['avatar_index'] as int?,
+                      )
                     : Icons.person_outline_rounded,
                 size: 16,
-                color: _currentUser != null ? const Color(0xFF10B981) : AppColors.textSecondary,
+                color: _currentUser != null
+                    ? const Color(0xFF10B981)
+                    : AppColors.textSecondary,
               ),
             ),
-            tooltip: _currentUser != null ? (_currentUser!['nickname']?.toString() ?? 'Profil') : 'Masuk',
+            tooltip: _currentUser != null
+                ? (_currentUser!['nickname']?.toString() ?? 'Profil')
+                : 'Masuk',
             onPressed: _showUserProfileDialog,
           ),
         ],
@@ -429,20 +490,32 @@ class _HomeScreenState extends State<HomeScreen> {
             if (_backendOfflineNotice)
               Container(
                 margin: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
                 decoration: BoxDecoration(
                   color: AppColors.warning.withValues(alpha: 0.15),
                   borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: AppColors.warning.withValues(alpha: 0.3)),
+                  border: Border.all(
+                    color: AppColors.warning.withValues(alpha: 0.3),
+                  ),
                 ),
                 child: const Row(
                   children: [
-                    Icon(Icons.cloud_off_rounded, size: 16, color: AppColors.warning),
+                    Icon(
+                      Icons.cloud_off_rounded,
+                      size: 16,
+                      color: AppColors.warning,
+                    ),
                     SizedBox(width: 8),
                     Expanded(
                       child: Text(
                         'Backend server offline. Menampilkan turnamen lokal di HP.',
-                        style: TextStyle(color: AppColors.warning, fontSize: 11),
+                        style: TextStyle(
+                          color: AppColors.warning,
+                          fontSize: 11,
+                        ),
                       ),
                     ),
                   ],
@@ -451,23 +524,27 @@ class _HomeScreenState extends State<HomeScreen> {
             const SizedBox(height: 10),
             Expanded(
               child: _isLoading
-                  ? const Center(child: CircularProgressIndicator(color: AppColors.primary))
+                  ? const Center(
+                      child: CircularProgressIndicator(
+                        color: AppColors.primary,
+                      ),
+                    )
                   : _errorMessage != null
-                      ? _buildErrorState()
-                      : _tournaments.isEmpty
-                          ? _buildEmptyState()
-                          : RefreshIndicator(
-                              color: AppColors.primary,
-                              backgroundColor: AppColors.bgCard,
-                              onRefresh: _loadTournaments,
-                              child: ListView.builder(
-                                padding: const EdgeInsets.fromLTRB(16, 4, 16, 80),
-                                itemCount: _tournaments.length,
-                                itemBuilder: (context, index) {
-                                  return _buildTournamentCard(_tournaments[index]);
-                                },
-                              ),
-                            ),
+                  ? _buildErrorState()
+                  : _tournaments.isEmpty
+                  ? _buildEmptyState()
+                  : RefreshIndicator(
+                      color: AppColors.primary,
+                      backgroundColor: AppColors.bgCard,
+                      onRefresh: _loadTournaments,
+                      child: ListView.builder(
+                        padding: const EdgeInsets.fromLTRB(16, 4, 16, 80),
+                        itemCount: _tournaments.length,
+                        itemBuilder: (context, index) {
+                          return _buildTournamentCard(_tournaments[index]);
+                        },
+                      ),
+                    ),
             ),
           ],
         ),
@@ -475,7 +552,9 @@ class _HomeScreenState extends State<HomeScreen> {
       bottomNavigationBar: Container(
         decoration: BoxDecoration(
           color: AppColors.bgDarkSecondary,
-          border: Border(top: BorderSide(color: Colors.white.withValues(alpha: 0.06))),
+          border: Border(
+            top: BorderSide(color: Colors.white.withValues(alpha: 0.06)),
+          ),
         ),
         child: BottomNavigationBar(
           currentIndex: _currentNavIndex,
@@ -508,7 +587,9 @@ class _HomeScreenState extends State<HomeScreen> {
               onPressed: () async {
                 final result = await Navigator.push(
                   context,
-                  MaterialPageRoute(builder: (context) => const BuatTurnamenScreen()),
+                  MaterialPageRoute(
+                    builder: (context) => const BuatTurnamenScreen(),
+                  ),
                 );
                 if (result == true) {
                   _loadTournaments();
@@ -518,7 +599,10 @@ class _HomeScreenState extends State<HomeScreen> {
               icon: const Icon(Icons.add_rounded, color: Colors.white),
               label: const Text(
                 'Buat Turnamen',
-                style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
             )
           : null,
@@ -533,22 +617,37 @@ class _HomeScreenState extends State<HomeScreen> {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: Row(
           children: [
-            const Icon(Icons.lock_outline_rounded, color: AppColors.secondary, size: 22),
+            const Icon(
+              Icons.lock_outline_rounded,
+              color: AppColors.secondary,
+              size: 22,
+            ),
             const SizedBox(width: 8),
             Text(
               title,
-              style: const TextStyle(color: AppColors.textPrimary, fontSize: 16, fontWeight: FontWeight.bold),
+              style: const TextStyle(
+                color: AppColors.textPrimary,
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+              ),
             ),
           ],
         ),
         content: Text(
           message,
-          style: const TextStyle(color: AppColors.textSecondary, fontSize: 13, height: 1.4),
+          style: const TextStyle(
+            color: AppColors.textSecondary,
+            fontSize: 13,
+            height: 1.4,
+          ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('Batal', style: TextStyle(color: AppColors.textMuted)),
+            child: const Text(
+              'Batal',
+              style: TextStyle(color: AppColors.textMuted),
+            ),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary),
@@ -560,7 +659,13 @@ class _HomeScreenState extends State<HomeScreen> {
               );
               _loadUserSession();
             },
-            child: const Text('Login Sekarang', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+            child: const Text(
+              'Login Sekarang',
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
           ),
         ],
       ),
@@ -603,7 +708,9 @@ class _HomeScreenState extends State<HomeScreen> {
         decoration: InputDecoration(
           hintText: isGuest
               ? 'Login untuk mencari turnamen...'
-              : (_currentNavIndex == 0 ? 'Cari turnamen aktif...' : 'Cari riwayat turnamen...'),
+              : (_currentNavIndex == 0
+                    ? 'Cari turnamen aktif...'
+                    : 'Cari riwayat turnamen...'),
           hintStyle: const TextStyle(color: AppColors.textMuted, fontSize: 13),
           prefixIcon: Icon(
             isGuest ? Icons.lock_outline_rounded : Icons.search_rounded,
@@ -628,14 +735,18 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 )
               : (_searchController.text.isNotEmpty
-                  ? IconButton(
-                      icon: const Icon(Icons.close_rounded, color: AppColors.textMuted, size: 18),
-                      onPressed: () {
-                        _searchController.clear();
-                        _loadTournaments();
-                      },
-                    )
-                  : null),
+                    ? IconButton(
+                        icon: const Icon(
+                          Icons.close_rounded,
+                          color: AppColors.textMuted,
+                          size: 18,
+                        ),
+                        onPressed: () {
+                          _searchController.clear();
+                          _loadTournaments();
+                        },
+                      )
+                    : null),
           border: InputBorder.none,
           contentPadding: const EdgeInsets.symmetric(vertical: 12),
         ),
@@ -667,7 +778,9 @@ class _HomeScreenState extends State<HomeScreen> {
                   _loadTournaments();
                 },
                 backgroundColor: AppColors.bgCard,
-                selectedColor: isPrivat ? const Color(0xFF059669) : AppColors.primary,
+                selectedColor: isPrivat
+                    ? const Color(0xFF059669)
+                    : AppColors.primary,
                 labelStyle: TextStyle(
                   color: isSelected ? Colors.white : AppColors.textSecondary,
                   fontSize: 12,
@@ -676,10 +789,15 @@ class _HomeScreenState extends State<HomeScreen> {
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(10),
                   side: BorderSide(
-                    color: isSelected ? Colors.transparent : Colors.white.withValues(alpha: 0.06),
+                    color: isSelected
+                        ? Colors.transparent
+                        : Colors.white.withValues(alpha: 0.06),
                   ),
                 ),
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 2,
+                ),
               );
             },
           ),
@@ -708,15 +826,22 @@ class _HomeScreenState extends State<HomeScreen> {
                   labelStyle: TextStyle(
                     color: isSelected ? Colors.white : AppColors.textMuted,
                     fontSize: 11,
-                    fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                    fontWeight: isSelected
+                        ? FontWeight.bold
+                        : FontWeight.normal,
                   ),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(8),
                     side: BorderSide(
-                      color: isSelected ? AppColors.secondary : Colors.transparent,
+                      color: isSelected
+                          ? AppColors.secondary
+                          : Colors.transparent,
                     ),
                   ),
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 0,
+                  ),
                 );
               },
             ),
@@ -781,31 +906,44 @@ class _HomeScreenState extends State<HomeScreen> {
                       Row(
                         children: [
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 2,
+                            ),
                             decoration: BoxDecoration(
                               color: t.isPrivate
-                                  ? const Color(0xFF10B981).withValues(alpha: 0.15)
+                                  ? const Color(0xFF10B981)
+                                        .withValues(alpha: 0.15)
                                   : AppColors.secondary.withValues(alpha: 0.15),
                               borderRadius: BorderRadius.circular(6),
                               border: Border.all(
                                 color: t.isPrivate
-                                    ? const Color(0xFF10B981).withValues(alpha: 0.3)
-                                    : AppColors.secondary.withValues(alpha: 0.3),
+                                    ? const Color(0xFF10B981)
+                                          .withValues(alpha: 0.3)
+                                    : AppColors.secondary.withValues(
+                                        alpha: 0.3,
+                                      ),
                               ),
                             ),
                             child: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
                                 Icon(
-                                  t.isPrivate ? Icons.lock_rounded : Icons.public_rounded,
+                                  t.isPrivate
+                                      ? Icons.lock_rounded
+                                      : Icons.public_rounded,
                                   size: 10,
-                                  color: t.isPrivate ? const Color(0xFF10B981) : AppColors.secondary,
+                                  color: t.isPrivate
+                                      ? const Color(0xFF10B981)
+                                      : AppColors.secondary,
                                 ),
                                 const SizedBox(width: 4),
                                 Text(
                                   t.isPrivate ? 'Privat (Lokal HP)' : 'Publik',
                                   style: TextStyle(
-                                    color: t.isPrivate ? const Color(0xFF10B981) : AppColors.secondary,
+                                    color: t.isPrivate
+                                        ? const Color(0xFF10B981)
+                                        : AppColors.secondary,
                                     fontSize: 10,
                                     fontWeight: FontWeight.bold,
                                   ),
@@ -852,11 +990,16 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
                 const SizedBox(width: 8),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 5,
+                  ),
                   decoration: BoxDecoration(
                     color: statusColor.withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: statusColor.withValues(alpha: 0.3)),
+                    border: Border.all(
+                      color: statusColor.withValues(alpha: 0.3),
+                    ),
                   ),
                   child: Text(
                     t.status,
@@ -883,13 +1026,17 @@ class _HomeScreenState extends State<HomeScreen> {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Icon(
-              _currentNavIndex == 0 ? Icons.emoji_events_outlined : Icons.history_toggle_off_rounded,
+              _currentNavIndex == 0
+                  ? Icons.emoji_events_outlined
+                  : Icons.history_toggle_off_rounded,
               color: AppColors.textMuted,
               size: 56,
             ),
             const SizedBox(height: 16),
             Text(
-              _currentNavIndex == 0 ? 'Belum Ada Turnamen Aktif' : 'Belum Ada Riwayat Turnamen',
+              _currentNavIndex == 0
+                  ? 'Belum Ada Turnamen Aktif'
+                  : 'Belum Ada Riwayat Turnamen',
               style: const TextStyle(
                 color: AppColors.textPrimary,
                 fontSize: 16,
@@ -902,7 +1049,10 @@ class _HomeScreenState extends State<HomeScreen> {
                   ? 'Klik tombol "Buat Turnamen" di bawah untuk memulai turnamen baru.'
                   : 'Turnamen yang telah selesai akan otomatis muncul di sini.',
               textAlign: TextAlign.center,
-              style: const TextStyle(color: AppColors.textSecondary, fontSize: 13),
+              style: const TextStyle(
+                color: AppColors.textSecondary,
+                fontSize: 13,
+              ),
             ),
           ],
         ),
@@ -917,7 +1067,11 @@ class _HomeScreenState extends State<HomeScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Icon(Icons.cloud_off_rounded, color: AppColors.error, size: 56),
+            const Icon(
+              Icons.cloud_off_rounded,
+              color: AppColors.error,
+              size: 56,
+            ),
             const SizedBox(height: 16),
             const Text(
               'Gagal Terhubung ke Backend',
@@ -931,7 +1085,10 @@ class _HomeScreenState extends State<HomeScreen> {
             Text(
               _errorMessage ?? 'Terjadi kesalahan koneksi',
               textAlign: TextAlign.center,
-              style: const TextStyle(color: AppColors.textSecondary, fontSize: 13),
+              style: const TextStyle(
+                color: AppColors.textSecondary,
+                fontSize: 13,
+              ),
             ),
             const SizedBox(height: 20),
             Row(
@@ -941,14 +1098,25 @@ class _HomeScreenState extends State<HomeScreen> {
                   onPressed: _showServerSettingsDialog,
                   icon: const Icon(Icons.settings_rounded, size: 16),
                   label: const Text('Ganti URL API'),
-                  style: OutlinedButton.styleFrom(foregroundColor: AppColors.secondary),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppColors.secondary,
+                  ),
                 ),
                 const SizedBox(width: 12),
                 ElevatedButton.icon(
                   onPressed: _loadTournaments,
-                  icon: const Icon(Icons.refresh_rounded, size: 16, color: Colors.white),
-                  label: const Text('Coba Lagi', style: TextStyle(color: Colors.white)),
-                  style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary),
+                  icon: const Icon(
+                    Icons.refresh_rounded,
+                    size: 16,
+                    color: Colors.white,
+                  ),
+                  label: const Text(
+                    'Coba Lagi',
+                    style: TextStyle(color: Colors.white),
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                  ),
                 ),
               ],
             ),

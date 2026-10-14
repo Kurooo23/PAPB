@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../services/auth_service.dart';
+import 'verify_email_screen.dart';
 
 /// Palet yang sama dengan login_screen.dart, agar identitas visual RivNet
 /// konsisten di seluruh alur auth. Sebaiknya dipindah ke satu file tema
@@ -184,15 +185,22 @@ class _RegisterScreenState extends State<RegisterScreen> {
       );
       if (!mounted) return;
 
-      final message = result['message'] ?? 'Pendaftaran berhasil. Silakan masuk.';
+      final message = result['message'] ?? 'Pendaftaran berhasil. Silakan verifikasi email Anda.';
       _showFeedback(
         icon: Icons.check_circle_rounded,
         message: message,
         color: _RegisterPalette.success,
       );
 
+      final userId = _extractUserId(result);
       await Future.delayed(const Duration(seconds: 1));
-      if (mounted) Navigator.pop(context);
+      if (!mounted) return;
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (_) => VerifyEmailScreen(email: email, userId: userId),
+        ),
+      );
     } catch (e) {
       if (!mounted) return;
       _showFeedback(
@@ -203,6 +211,17 @@ class _RegisterScreenState extends State<RegisterScreen> {
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
+  }
+
+  String? _extractUserId(Map<String, dynamic> result) {
+    final data = result['data'];
+    if (data is! Map) return null;
+    final user = data['user'];
+    if (user is Map && user['id_user'] is String) {
+      return user['id_user'] as String;
+    }
+    if (data['user_id'] is String) return data['user_id'] as String;
+    return null;
   }
 
   void _showFeedback({
@@ -592,7 +611,7 @@ class _RegisterFormState extends State<_RegisterForm> {
                 ),
               )
                   : const Text(
-                'Daftar Akun Turnamen',
+                'Daftar Akun',
                 style: TextStyle(
                   fontWeight: FontWeight.w600,
                   fontSize: 15,
