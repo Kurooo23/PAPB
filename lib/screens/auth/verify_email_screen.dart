@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+
 import '../../services/auth_service.dart';
 
 /// Palet yang sama dengan login_screen.dart dan register_screen.dart.
@@ -16,10 +17,37 @@ class _VerifyPalette {
   static const success = Color(0xFF3DA76A);
 }
 
-/// Ditampilkan setelah pendaftaran berhasil. Menunggu sampai pengguna
-/// mengklik link verifikasi yang dikirim ke email, dengan polling status
-/// verifikasi ke backend secara berkala. Pengguna tidak masuk ke halaman
-/// Masuk sebelum email-nya terverifikasi.
+/// Ukuran dari MediaQuery: padding luar 6% lebar layar, padding kartu
+/// 6% lebar (16–28 dp), ikon 16% lebar (56–80 dp), kartu maks 420 dp.
+class _VerifySize {
+  const _VerifySize._({
+    required this.outerHorizontal,
+    required this.outerVertical,
+    required this.cardPadding,
+    required this.iconSize,
+    required this.titleFontSize,
+  });
+
+  factory _VerifySize.of(BuildContext context) {
+    final screen = MediaQuery.sizeOf(context);
+    return _VerifySize._(
+      outerHorizontal: screen.width * 0.06,
+      outerVertical: screen.height * 0.04,
+      cardPadding: (screen.width * 0.06).clamp(16.0, 28.0),
+      iconSize: (screen.width * 0.16).clamp(56.0, 80.0),
+      titleFontSize: screen.width < 360 ? 18 : 20,
+    );
+  }
+
+  final double outerHorizontal;
+  final double outerVertical;
+  final double cardPadding;
+  final double iconSize;
+  final double titleFontSize;
+}
+
+/// Ditampilkan setelah pendaftaran berhasil. Polling status verifikasi ke
+/// backend secara berkala sampai pengguna mengklik link di email.
 class VerifyEmailScreen extends StatefulWidget {
   const VerifyEmailScreen({
     super.key,
@@ -29,9 +57,8 @@ class VerifyEmailScreen extends StatefulWidget {
 
   final String email;
 
-  /// Null kalau backend tidak mengembalikan id (mis. format respons berubah).
-  /// Tanpa id, polling otomatis dilewati dan pengguna hanya bisa menunggu
-  /// manual lalu kembali sendiri ke halaman Masuk.
+  /// Null kalau backend tidak mengembalikan id. Tanpa id, polling otomatis
+  /// dilewati dan pengguna kembali sendiri ke halaman Masuk.
   final String? userId;
 
   @override
@@ -69,9 +96,7 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
     _isChecking = true;
 
     try {
-      final result = await AuthService.checkVerificationStatus(
-        userId: widget.userId!,
-      );
+      final result = await AuthService.checkVerificationStatus(userId: widget.userId!);
       final verified = (result['data'] as Map?)?['verified'] == true;
       if (!mounted || !verified) return;
 
@@ -85,9 +110,10 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
       );
 
       await Future.delayed(const Duration(milliseconds: 900));
+      // Push/Pop: kembali ke halaman Masuk
       if (mounted) Navigator.pop(context);
     } catch (_) {
-      // Kegagalan cek status diam-diam diabaikan; polling berikutnya coba lagi.
+      // Gagal cek status diabaikan; polling berikutnya coba lagi.
     } finally {
       _isChecking = false;
     }
@@ -149,10 +175,7 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
             Icon(icon, color: color, size: 20),
             const SizedBox(width: 12),
             Expanded(
-              child: Text(
-                message,
-                style: const TextStyle(color: _VerifyPalette.textPrimary),
-              ),
+              child: Text(message, style: const TextStyle(color: _VerifyPalette.textPrimary)),
             ),
           ],
         ),
@@ -162,6 +185,7 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final size = _VerifySize.of(context);
     final canResend = !_isResending && _cooldownSeconds <= 0 && !_isVerified;
 
     return Scaffold(
@@ -169,11 +193,14 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+            padding: EdgeInsets.symmetric(
+              horizontal: size.outerHorizontal,
+              vertical: size.outerVertical,
+            ),
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 420),
               child: Container(
-                padding: const EdgeInsets.all(24),
+                padding: EdgeInsets.all(size.cardPadding),
                 decoration: BoxDecoration(
                   color: _VerifyPalette.surface,
                   borderRadius: BorderRadius.circular(16),
@@ -182,84 +209,21 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    _StatusIcon(isVerified: _isVerified),
+                    _StatusIcon(isVerified: _isVerified, size: size.iconSize),
                     const SizedBox(height: 20),
-                    Text(
-                      _isVerified ? 'Email Terverifikasi' : 'Cek Email Anda',
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(
-                        color: _VerifyPalette.textPrimary,
-                        fontSize: 20,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    Text(
-                      _isVerified
-                          ? 'Mengalihkan ke halaman Masuk...'
-                          : 'Kami telah mengirim link verifikasi ke:',
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(
-                        color: _VerifyPalette.textSecondary,
-                        fontSize: 14,
-                      ),
+                    _VerifyMessage(
+                      isVerified: _isVerified,
+                      email: widget.email,
+                      titleFontSize: size.titleFontSize,
                     ),
                     if (!_isVerified) ...[
-                      const SizedBox(height: 6),
-                      Text(
-                        widget.email,
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          color: _VerifyPalette.accent,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      const Text(
-                        'Buka email tersebut dan klik link verifikasi. Halaman '
-                        'ini otomatis lanjut ke halaman Masuk setelah '
-                        'terverifikasi.',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          color: _VerifyPalette.textMuted,
-                          fontSize: 12.5,
-                          height: 1.4,
-                        ),
-                      ),
                       const SizedBox(height: 24),
-                      TextButton(
+                      _ResendButton(
+                        isResending: _isResending,
+                        cooldownSeconds: _cooldownSeconds,
                         onPressed: canResend ? _handleResend : null,
-                        style: TextButton.styleFrom(
-                          foregroundColor: _VerifyPalette.accent,
-                          disabledForegroundColor: _VerifyPalette.textMuted,
-                        ),
-                        child: _isResending
-                            ? const SizedBox(
-                                width: 18,
-                                height: 18,
-                                child: CircularProgressIndicator(strokeWidth: 2),
-                              )
-                            : Text(
-                                _cooldownSeconds > 0
-                                    ? 'Kirim ulang (${_cooldownSeconds}s)'
-                                    : 'Kirim ulang email verifikasi',
-                                style: const TextStyle(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
                       ),
-                      TextButton(
-                        onPressed: () => Navigator.pop(context),
-                        style: TextButton.styleFrom(
-                          foregroundColor: _VerifyPalette.textSecondary,
-                        ),
-                        child: const Text(
-                          'Kembali ke halaman Masuk',
-                          style: TextStyle(fontSize: 13),
-                        ),
-                      ),
+                      _BackToLoginButton(onPressed: () => Navigator.pop(context)),
                     ],
                   ],
                 ),
@@ -272,32 +236,141 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
   }
 }
 
+// ===================== WIDGET STATELESS =====================
+
 class _StatusIcon extends StatelessWidget {
-  const _StatusIcon({required this.isVerified});
+  const _StatusIcon({required this.isVerified, required this.size});
 
   final bool isVerified;
+  final double size;
 
   @override
   Widget build(BuildContext context) {
+    final color = isVerified ? _VerifyPalette.success : _VerifyPalette.accent;
+
     return Container(
-      width: 64,
-      height: 64,
+      width: size,
+      height: size,
       decoration: BoxDecoration(
-        color: (isVerified ? _VerifyPalette.success : _VerifyPalette.accent)
-            .withValues(alpha: 0.15),
+        color: color.withValues(alpha: 0.15),
         shape: BoxShape.circle,
       ),
-      child: isVerified
-          ? const Icon(
-              Icons.check_circle_rounded,
-              color: _VerifyPalette.success,
-              size: 32,
-            )
-          : const Icon(
-              Icons.mark_email_unread_rounded,
+      child: Icon(
+        isVerified ? Icons.check_circle_rounded : Icons.mark_email_unread_rounded,
+        color: color,
+        size: size * 0.5,
+      ),
+    );
+  }
+}
+
+class _VerifyMessage extends StatelessWidget {
+  const _VerifyMessage({
+    required this.isVerified,
+    required this.email,
+    required this.titleFontSize,
+  });
+
+  final bool isVerified;
+  final String email;
+  final double titleFontSize;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Text(
+          isVerified ? 'Email Terverifikasi' : 'Cek Email Anda',
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            color: _VerifyPalette.textPrimary,
+            fontSize: titleFontSize,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        const SizedBox(height: 10),
+        Text(
+          isVerified
+              ? 'Mengalihkan ke halaman Masuk...'
+              : 'Kami telah mengirim link verifikasi ke:',
+          textAlign: TextAlign.center,
+          style: const TextStyle(color: _VerifyPalette.textSecondary, fontSize: 14),
+        ),
+        if (!isVerified) ...[
+          const SizedBox(height: 6),
+          Text(
+            email,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
               color: _VerifyPalette.accent,
-              size: 32,
+              fontSize: 14,
+              fontWeight: FontWeight.w700,
             ),
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            'Buka email tersebut dan klik link verifikasi. Halaman ini otomatis '
+            'lanjut ke halaman Masuk setelah terverifikasi.',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: _VerifyPalette.textMuted, fontSize: 12.5, height: 1.4),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class _ResendButton extends StatelessWidget {
+  const _ResendButton({
+    required this.isResending,
+    required this.cooldownSeconds,
+    required this.onPressed,
+  });
+
+  final bool isResending;
+  final int cooldownSeconds;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return TextButton(
+      onPressed: onPressed,
+      style: TextButton.styleFrom(
+        foregroundColor: _VerifyPalette.accent,
+        disabledForegroundColor: _VerifyPalette.textMuted,
+        minimumSize: const Size(0, 44),
+      ),
+      child: isResending
+          ? const SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          : Text(
+              cooldownSeconds > 0
+                  ? 'Kirim ulang (${cooldownSeconds}s)'
+                  : 'Kirim ulang email verifikasi',
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+            ),
+    );
+  }
+}
+
+class _BackToLoginButton extends StatelessWidget {
+  const _BackToLoginButton({required this.onPressed});
+
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return TextButton(
+      onPressed: onPressed,
+      style: TextButton.styleFrom(
+        foregroundColor: _VerifyPalette.textSecondary,
+        minimumSize: const Size(0, 44),
+      ),
+      child: const Text('Kembali ke halaman Masuk', style: TextStyle(fontSize: 13)),
     );
   }
 }

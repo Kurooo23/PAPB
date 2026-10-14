@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:get/get.dart';
+import 'package:provider/provider.dart';
 
 import '../../data/database_helper.dart';
 import '../../services/auth_service.dart';
 import '../../data/services/google_sign_in_service.dart';
-import 'register_screen.dart';
-import '../home/home_screen.dart';
+import '../../providers/auth_provider.dart';
+import '../../routes/app_routes.dart';
 
 /// Palet layar login: dark neutral + satu aksen emas (peringkat/trofi
 /// turnamen). Sengaja bukan gradient biru-ungu/glow berlapis (lihat audit).
@@ -230,6 +232,9 @@ class _LoginScreenState extends State<LoginScreen> {
       await DatabaseHelper.instance.saveUserSession(user, token: token);
       if (!mounted) return;
 
+      // Provider: simpan user ke state global
+      context.read<AuthProvider>().setUser(user);
+
       _showFeedback(
         icon: Icons.check_circle_rounded,
         message: 'Login berhasil. Selamat datang di Arena Turnamen.',
@@ -238,11 +243,9 @@ class _LoginScreenState extends State<LoginScreen> {
 
       await Future.delayed(const Duration(milliseconds: 600));
       if (!mounted) return;
-      Navigator.pushAndRemoveUntil(
-        context,
-        MaterialPageRoute(builder: (_) => HomeScreen(user: user)),
-        (route) => false,
-      );
+
+      // GetX: hapus semua halaman sebelumnya, lalu ke Home
+      Get.offAllNamed(AppRoutes.home);
     } catch (e) {
       if (!mounted) return;
       final message = e.toString().replaceFirst('Exception: ', '');
@@ -321,10 +324,8 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   void _openRegister() {
-    Navigator.push(
-      context,
-      MaterialPageRoute(builder: (_) => const RegisterScreen()),
-    );
+    // GetX
+    Get.toNamed(AppRoutes.register);
   }
 
   @override

@@ -1,13 +1,12 @@
-// lib/main.dart
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:get/get.dart';
+import 'package:provider/provider.dart';
 
 import 'core/theme/app_colors.dart';
-import 'data/database_helper.dart';
-import 'screens/home/home_screen.dart';
-
-const _storage = FlutterSecureStorage();
+import 'providers/auth_provider.dart';
+import 'routes/app_pages.dart';
+import 'routes/app_routes.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -21,23 +20,18 @@ Future<void> main() async {
     ),
   );
 
-  final token = await _storage.read(key: 'user_token');
-  final user = await DatabaseHelper.instance.getUserSession();
+  final auth = AuthProvider();
+  await auth.loadSession();
 
-  final isLoggedIn =
-      token != null && token.isNotEmpty && user != null;
-
-  runApp(MyApp(initialUser: isLoggedIn ? user : null));
+  runApp(ChangeNotifierProvider.value(value: auth, child: const MyApp()));
 }
 
 class MyApp extends StatelessWidget {
-  final Map<String, dynamic>? initialUser;
-
-  const MyApp({super.key, this.initialUser});
+  const MyApp({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
+    return GetMaterialApp(
       title: 'RivNet',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
@@ -51,7 +45,8 @@ class MyApp extends StatelessWidget {
         ),
         fontFamily: 'Roboto',
       ),
-      home: HomeScreen(user: initialUser),
+      initialRoute: AppRoutes.home,
+      getPages: AppPages.pages,
     );
   }
 }

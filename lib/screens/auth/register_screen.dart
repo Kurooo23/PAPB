@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:get/get.dart';
+
+import '../../routes/app_routes.dart';
 import '../../services/auth_service.dart';
-import 'verify_email_screen.dart';
 
 /// Palet yang sama dengan login_screen.dart, agar identitas visual RivNet
 /// konsisten di seluruh alur auth. Sebaiknya dipindah ke satu file tema
@@ -195,11 +197,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
       final userId = _extractUserId(result);
       await Future.delayed(const Duration(seconds: 1));
       if (!mounted) return;
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(
-          builder: (_) => VerifyEmailScreen(email: email, userId: userId),
-        ),
+
+      // GetX: ganti halaman register dengan verify email + kirim data
+      Get.offNamed(
+        AppRoutes.verifyEmail,
+        arguments: {'email': email, 'userId': userId},
       );
     } catch (e) {
       if (!mounted) return;
