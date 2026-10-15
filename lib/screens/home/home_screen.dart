@@ -11,61 +11,10 @@ import '../../data/services/api_service.dart';
 import '../../data/services/local_tournament_service.dart';
 import '../../providers/auth_provider.dart';
 import '../../routes/app_routes.dart';
+import '../widgets/common_widgets.dart';
 
-/// Ukuran layout Home dihitung dari MediaQuery.
-/// - Padding samping = 4% lebar layar.
-/// - Di layar lebar, isi dibatasi 1100 dp dan diletakkan di tengah.
-/// - Jumlah kolom kartu: HP = 1, tablet = 2, layar lebar = 3
-///   (tiap kolom dibagi rata 1:1 / 1:1:1 pakai Row + Expanded).
-class _HomeLayout {
-  const _HomeLayout._({
-    required this.sidePadding,
-    required this.columns,
-    required this.gap,
-    required this.iconBoxSize,
-    required this.titleFontSize,
-    required this.appBarFontSize,
-    required this.isCompact,
-  });
-
-  factory _HomeLayout.of(BuildContext context) {
-    final screen = MediaQuery.sizeOf(context);
-    const maxContentWidth = 1100.0;
-
-    final contentWidth =
-        screen.width > maxContentWidth ? maxContentWidth : screen.width;
-    final extraSpace =
-        screen.width > maxContentWidth ? (screen.width - maxContentWidth) / 2 : 0.0;
-    final columns = contentWidth >= 900
-        ? 3
-        : contentWidth >= 600
-            ? 2
-            : 1;
-    final cardWidth = contentWidth / columns;
-
-    return _HomeLayout._(
-      sidePadding: extraSpace + contentWidth * 0.04,
-      columns: columns,
-      gap: contentWidth * 0.03,
-      // Kotak ikon status = 13% lebar kartu, dibatasi 40–56 dp.
-      iconBoxSize: (cardWidth * 0.13).clamp(40.0, 56.0),
-      titleFontSize: screen.width < 360 ? 14 : 15,
-      appBarFontSize: screen.width < 360 ? 16 : 18,
-      isCompact: screen.height < 640,
-    );
-  }
-
-  final double sidePadding;
-  final int columns;
-  final double gap;
-  final double iconBoxSize;
-  final double titleFontSize;
-  final double appBarFontSize;
-  final bool isCompact;
-}
-
-const _loginRequiredMessage =
-    'Fitur pencarian turnamen hanya dapat digunakan oleh pengguna yang telah login. Silakan masuk ke akun Anda.';
+const _sourcePrivate = '🔒 Privat (Lokal)';
+const _sourcePublic = '🌐 Publik (Server)';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -75,37 +24,25 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  final TextEditingController _searchController = TextEditingController();
-  final ApiService _apiService = ApiService.instance;
-  final LocalTournamentService _localService = LocalTournamentService.instance;
-
-  // Provider: user diambil dari AuthProvider
-  Map<String, dynamic>? get _currentUser => context.read<AuthProvider>().user;
+  final _searchController = TextEditingController();
 
   int _currentNavIndex = 0; // 0 = Turnamen Aktif, 1 = Riwayat
   String _selectedFilter = 'Semua';
   String _selectedSourceFilter = 'Semua';
   bool _isLoading = true;
   String? _errorMessage;
-  bool _backendOfflineNotice = false;
+  bool _backendOffline = false;
   List<TurnamenModel> _tournaments = [];
 
-  static const List<String> _filters = ['Semua', 'Akan Datang', 'Berlangsung'];
-  static const List<String> _sourceFilters = [
-    'Semua',
-    '🔒 Privat (Lokal)',
-    '🌐 Publik (Server)',
-  ];
+  bool get _isHistory => _currentNavIndex == 1;
+
+  // Provider: user diambil dari AuthProvider
+  Map<String, dynamic>? get _currentUser => context.read<AuthProvider>().user;
 
   @override
   void initState() {
     super.initState();
     _loadTournaments();
-  }
-
-  Future<void> _loadUserSession() async {
-    await context.read<AuthProvider>().loadSession();
-    if (mounted) _loadTournaments();
   }
 
   @override
@@ -118,77 +55,56 @@ class _HomeScreenState extends State<HomeScreen> {
     setState(() {
       _isLoading = true;
       _errorMessage = null;
-      _backendOfflineNotice = false;
+      _backendOffline = false;
     });
 
+    final query = _searchController.text.trim();
+
+    // 1. Turnamen privat dari SQLite lokal
+    var localData = <TurnamenModel>[];
     try {
-      final query = _searchController.text.trim();
-
-      // 1. Turnamen privat dari SQLite lokal
-      List<TurnamenModel> localData = [];
-      try {
-        final emailUser = _currentUser?['email']?.toString() ?? '';
-        if (_currentNavIndex == 1) {
-          localData = await _localService.getRiwayatTurnamen(
-            search: query,
-            emailUser: emailUser,
-          );
-        } else {
-          localData = await _localService.getTurnamenAktif(
-            search: query,
-            statusFilter: _selectedFilter,
-            emailUser: emailUser,
-          );
-        }
-      } catch (e) {
-        debugPrint('Error memuat turnamen lokal: $e');
-      }
-
-      // 2. Turnamen publik dari backend
-      List<TurnamenModel> remoteData = [];
-      String? backendError;
-      try {
-        if (_currentNavIndex == 1) {
-          remoteData = await _apiService.getRiwayatTurnamen(search: query);
-        } else {
-          remoteData = await _apiService.getTurnamenAktif(
-            search: query,
-            statusFilter: _selectedFilter,
-          );
-        }
-      } catch (e) {
-        backendError = e.toString().replaceFirst('Exception: ', '');
-      }
-
-      // 3. Gabungkan dan filter sumber
-      List<TurnamenModel> combined = [...localData, ...remoteData];
-      if (_selectedSourceFilter == '🔒 Privat (Lokal)') {
-        combined = combined.where((t) => t.isPrivate).toList();
-      } else if (_selectedSourceFilter == '🌐 Publik (Server)') {
-        combined = combined.where((t) => !t.isPrivate).toList();
-      }
-      combined.sort((a, b) => b.tanggalMulai.compareTo(a.tanggalMulai));
-
-      if (mounted) {
-        setState(() {
-          _tournaments = combined;
-          _isLoading = false;
-          _backendOfflineNotice = backendError != null;
-          _errorMessage = (combined.isEmpty &&
-                  backendError != null &&
-                  _selectedSourceFilter != '🔒 Privat (Lokal)')
-              ? backendError
-              : null;
-        });
-      }
+      final local = LocalTournamentService.instance;
+      final emailUser = _currentUser?['email']?.toString() ?? '';
+      localData = _isHistory
+          ? await local.getRiwayatTurnamen(search: query, emailUser: emailUser)
+          : await local.getTurnamenAktif(
+              search: query,
+              statusFilter: _selectedFilter,
+              emailUser: emailUser,
+            );
     } catch (e) {
-      if (mounted) {
-        setState(() {
-          _errorMessage = e.toString().replaceFirst('Exception: ', '');
-          _isLoading = false;
-        });
-      }
+      debugPrint('Error memuat turnamen lokal: $e');
     }
+
+    // 2. Turnamen publik dari backend
+    var remoteData = <TurnamenModel>[];
+    String? backendError;
+    try {
+      final api = ApiService.instance;
+      remoteData = _isHistory
+          ? await api.getRiwayatTurnamen(search: query)
+          : await api.getTurnamenAktif(search: query, statusFilter: _selectedFilter);
+    } catch (e) {
+      backendError = errorText(e);
+    }
+
+    // 3. Gabungkan, filter sumber, urutkan dari yang terbaru
+    final combined = [
+      for (final t in [...localData, ...remoteData])
+        if (_selectedSourceFilter == 'Semua' ||
+            t.isPrivate == (_selectedSourceFilter == _sourcePrivate))
+          t,
+    ]..sort((a, b) => b.tanggalMulai.compareTo(a.tanggalMulai));
+
+    if (!mounted) return;
+    setState(() {
+      _tournaments = combined;
+      _isLoading = false;
+      _backendOffline = backendError != null;
+      _errorMessage = combined.isEmpty && _selectedSourceFilter != _sourcePrivate
+          ? backendError
+          : null;
+    });
   }
 
   // ===================== NAVIGASI =====================
@@ -212,31 +128,37 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _openLogin() async {
     // Named Route
     await Navigator.pushNamed(context, AppRoutes.login);
-    _loadUserSession();
+    if (!mounted) return;
+    await context.read<AuthProvider>().loadSession();
+    if (mounted) _loadTournaments();
   }
 
-  // ===================== DIALOG =====================
+  void _promptLogin() {
+    showLoginRequiredDialog(
+      message: 'Fitur pencarian turnamen hanya dapat digunakan oleh pengguna yang '
+          'telah login. Silakan masuk ke akun Anda.',
+      onLogin: _openLogin,
+    );
+  }
+
+  void _changeTab(int index) {
+    setState(() {
+      _currentNavIndex = index;
+      _selectedFilter = 'Semua';
+      _searchController.clear();
+    });
+    _loadTournaments();
+  }
+
+  // ===================== DIALOG (GetX) =====================
 
   void _showServerSettingsDialog() {
     final controller = TextEditingController(text: ApiConfig.baseUrl);
 
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.bgDarkSecondary,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Row(
-          children: [
-            Icon(Icons.dns_rounded, color: AppColors.secondary, size: 22),
-            SizedBox(width: 8),
-            Flexible(
-              child: Text(
-                'Pengaturan Server API',
-                style: TextStyle(color: AppColors.textPrimary, fontSize: 16),
-              ),
-            ),
-          ],
-        ),
+    Get.dialog(
+      AppDialog(
+        leading: const Icon(Icons.dns_rounded, color: AppColors.secondary, size: 22),
+        title: 'Pengaturan Server API',
         content: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -259,183 +181,89 @@ class _HomeScreenState extends State<HomeScreen> {
                     borderRadius: BorderRadius.circular(10),
                     borderSide: BorderSide.none,
                   ),
-                  contentPadding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                 ),
               ),
               const SizedBox(height: 10),
               const Text(
-                '• Emulator Android: http://10.0.2.2:3000/api\n• Windows/Web: http://localhost:3000/api\n• HP Fisik: http://IP_LAPTOP:3000/api',
+                '• Emulator Android: http://10.0.2.2:3000/api\n'
+                '• Windows/Web: http://localhost:3000/api\n'
+                '• HP Fisik: http://IP_LAPTOP:3000/api',
                 style: TextStyle(color: AppColors.textMuted, fontSize: 11, height: 1.4),
               ),
             ],
           ),
         ),
         actions: [
-          TextButton(
+          DialogTextButton(
+            'Reset Default',
             onPressed: () {
               ApiConfig.resetToDefault();
-              Navigator.pop(ctx);
+              Get.back();
               _loadTournaments();
             },
-            child: const Text(
-              'Reset Default',
-              style: TextStyle(color: AppColors.textSecondary),
-            ),
           ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary),
+          DialogFilledButton(
+            'Simpan',
             onPressed: () {
               if (controller.text.trim().isNotEmpty) {
                 ApiConfig.baseUrl = controller.text.trim();
               }
-              Navigator.pop(ctx);
+              Get.back();
               _loadTournaments();
             },
-            child: const Text('Simpan', style: TextStyle(color: Colors.white)),
           ),
         ],
       ),
     );
+  }
+
+  Future<void> _logout() async {
+    // Provider: logout lewat AuthProvider
+    await context.read<AuthProvider>().logout();
+    if (Get.isDialogOpen ?? false) Get.back();
+    if (!mounted) return;
+
+    _searchController.clear();
+    _loadTournaments();
+    context.showSnack('Anda telah keluar akun dan kembali ke mode tamu.');
   }
 
   void _showUserProfileDialog() {
     final user = _currentUser;
 
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.bgDarkSecondary,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Row(
-          children: [
-            CircleAvatar(
-              radius: 18,
-              backgroundColor: AppColors.primary.withValues(alpha: 0.2),
-              child: Icon(
-                user != null
-                    ? AvatarHelper.getIcon(user['avatar_index'] as int?)
-                    : Icons.person_rounded,
-                color: AppColors.secondary,
-                size: 20,
-              ),
-            ),
-            const SizedBox(width: 10),
-            Flexible(
-              child: Text(
-                user != null ? 'Profil Pengguna' : 'Belum Masuk Akun',
-                style: const TextStyle(
-                  color: AppColors.textPrimary,
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
-          ],
+    Get.dialog(
+      AppDialog(
+        leading: CircleAvatar(
+          radius: 18,
+          backgroundColor: AppColors.primary.withValues(alpha: 0.2),
+          child: Icon(
+            user != null
+                ? AvatarHelper.getIcon(user['avatar_index'] as int?)
+                : Icons.person_rounded,
+            color: AppColors.secondary,
+            size: 20,
+          ),
         ),
-        content: user != null
-            ? _ProfileInfo(user: user)
-            : const Text(
-                'Anda belum masuk akun. Masuk akun agar data turnamen offline dapat dikaitkan dengan profil Anda.',
-                style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
-              ),
+        title: user != null ? 'Profil Pengguna' : 'Belum Masuk Akun',
+        content: user != null ? _ProfileInfo(user: user) : null,
+        message: 'Anda belum masuk akun. Masuk akun agar data turnamen offline '
+            'dapat dikaitkan dengan profil Anda.',
         actions: user != null
             ? [
-                TextButton(
-                  onPressed: () async {
-                    // Provider: logout lewat AuthProvider
-                    await context.read<AuthProvider>().logout();
-                    if (ctx.mounted) Navigator.pop(ctx);
-                    if (!mounted) return;
-
-                    setState(() => _searchController.clear());
-                    _loadTournaments();
-
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Anda telah keluar akun dan kembali ke mode tamu.'),
-                        backgroundColor: AppColors.primary,
-                      ),
-                    );
-                  },
-                  child: const Text(
-                    'Keluar Akun',
-                    style: TextStyle(color: AppColors.error),
-                  ),
-                ),
-                ElevatedButton(
-                  style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary),
-                  onPressed: () => Navigator.pop(ctx),
-                  child: const Text('Tutup', style: TextStyle(color: Colors.white)),
-                ),
+                DialogTextButton('Keluar Akun', color: AppColors.error, onPressed: _logout),
+                DialogFilledButton('Tutup', onPressed: () => Get.back()),
               ]
             : [
-                TextButton(
-                  onPressed: () => Navigator.pop(ctx),
-                  child: const Text(
-                    'Batal',
-                    style: TextStyle(color: AppColors.textSecondary),
-                  ),
-                ),
-                ElevatedButton(
-                  style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary),
+                const DialogTextButton('Batal'),
+                DialogFilledButton(
+                  'Login Sekarang',
                   onPressed: () {
-                    Navigator.pop(ctx);
+                    Get.back();
                     _openLogin();
                   },
-                  child: const Text(
-                    'Login Sekarang',
-                    style: TextStyle(color: Colors.white),
-                  ),
                 ),
               ],
-      ),
-    );
-  }
-
-  void _promptLogin() {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.bgDarkSecondary,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Row(
-          children: [
-            Icon(Icons.lock_outline_rounded, color: AppColors.secondary, size: 22),
-            SizedBox(width: 8),
-            Flexible(
-              child: Text(
-                'Login Diperlukan',
-                style: TextStyle(
-                  color: AppColors.textPrimary,
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
-          ],
-        ),
-        content: const Text(
-          _loginRequiredMessage,
-          style: TextStyle(color: AppColors.textSecondary, fontSize: 13, height: 1.4),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Batal', style: TextStyle(color: AppColors.textMuted)),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary),
-            onPressed: () {
-              Navigator.pop(ctx);
-              _openLogin();
-            },
-            child: const Text(
-              'Login Sekarang',
-              style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-            ),
-          ),
-        ],
       ),
     );
   }
@@ -445,21 +273,18 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     // Provider: rebuild otomatis saat status login berubah
-    context.watch<AuthProvider>();
-    final layout = _HomeLayout.of(context);
-    final user = _currentUser;
+    final user = context.watch<AuthProvider>().user;
     final isGuest = user == null;
+    final layout = PageLayout.of(context);
 
     return Scaffold(
       backgroundColor: AppColors.bgDark,
       appBar: AppBar(
-        title: _HomeAppBarTitle(
-          title: _currentNavIndex == 0 ? 'RivNet Turnamen' : 'Riwayat Turnamen',
-          fontSize: layout.appBarFontSize,
+        title: _AppBarTitle(
+          title: _isHistory ? 'Riwayat Turnamen' : 'RivNet Turnamen',
+          fontSize: layout.isNarrow ? 16 : 18,
         ),
-        actions: [
-          _ProfileButton(user: user, onPressed: _showUserProfileDialog),
-        ],
+        actions: [_ProfileButton(user: user, onPressed: _showUserProfileDialog)],
       ),
       body: SafeArea(
         child: Column(
@@ -468,27 +293,18 @@ class _HomeScreenState extends State<HomeScreen> {
             Padding(
               padding: EdgeInsets.fromLTRB(
                 layout.sidePadding,
-                layout.isCompact ? 8 : 12,
+                layout.isShort ? 8 : 12,
                 layout.sidePadding,
                 8,
               ),
-              child: _HomeSearchBar(
+              child: _SearchBar(
                 controller: _searchController,
                 isGuest: isGuest,
                 hintText: isGuest
                     ? 'Login untuk mencari turnamen...'
-                    : (_currentNavIndex == 0
-                        ? 'Cari turnamen aktif...'
-                        : 'Cari riwayat turnamen...'),
+                    : (_isHistory ? 'Cari riwayat turnamen...' : 'Cari turnamen aktif...'),
                 onLocked: _promptLogin,
-                onChanged: () {
-                  if (isGuest) {
-                    _searchController.clear();
-                    _promptLogin();
-                    return;
-                  }
-                  _loadTournaments();
-                },
+                onChanged: _loadTournaments,
                 onClear: () {
                   _searchController.clear();
                   _loadTournaments();
@@ -496,26 +312,27 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
 
-            // Baris 2: filter
+            // Baris 2: filter (rata kiri)
             Padding(
               padding: EdgeInsets.symmetric(horizontal: layout.sidePadding),
-              child: SizedBox(
-                width: double.infinity, // paksa selebar layar, chip rata kiri
+              child: Align(
+                alignment: Alignment.centerLeft,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _SourceFilterChips(
-                      filters: _sourceFilters,
+                    _FilterChips(
+                      filters: const ['Semua', _sourcePrivate, _sourcePublic],
                       selected: _selectedSourceFilter,
                       onSelected: (value) {
                         setState(() => _selectedSourceFilter = value);
                         _loadTournaments();
                       },
                     ),
-                    if (_currentNavIndex == 0) ...[
+                    if (!_isHistory) ...[
                       const SizedBox(height: 8),
-                      _StatusFilterChips(
-                        filters: _filters,
+                      _FilterChips(
+                        small: true,
+                        filters: const ['Semua', 'Akan Datang', 'Berlangsung'],
                         selected: _selectedFilter,
                         onSelected: (value) {
                           setState(() => _selectedFilter = value);
@@ -528,7 +345,7 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
 
-            if (_backendOfflineNotice)
+            if (_backendOffline)
               Padding(
                 padding: EdgeInsets.fromLTRB(layout.sidePadding, 8, layout.sidePadding, 0),
                 child: const _OfflineNotice(),
@@ -543,20 +360,11 @@ class _HomeScreenState extends State<HomeScreen> {
       bottomNavigationBar: Container(
         decoration: BoxDecoration(
           color: AppColors.bgDarkSecondary,
-          border: Border(
-            top: BorderSide(color: Colors.white.withValues(alpha: 0.06)),
-          ),
+          border: Border(top: BorderSide(color: Colors.white.withValues(alpha: 0.06))),
         ),
         child: BottomNavigationBar(
           currentIndex: _currentNavIndex,
-          onTap: (index) {
-            setState(() {
-              _currentNavIndex = index;
-              _selectedFilter = 'Semua';
-              _searchController.clear();
-            });
-            _loadTournaments();
-          },
+          onTap: _changeTab,
           backgroundColor: Colors.transparent,
           elevation: 0,
           selectedItemColor: AppColors.primaryLight,
@@ -573,8 +381,9 @@ class _HomeScreenState extends State<HomeScreen> {
           ],
         ),
       ),
-      floatingActionButton: _currentNavIndex == 0
-          ? FloatingActionButton.extended(
+      floatingActionButton: _isHistory
+          ? null
+          : FloatingActionButton.extended(
               onPressed: _openBuatTurnamen,
               backgroundColor: AppColors.primary,
               icon: const Icon(Icons.add_rounded, color: Colors.white),
@@ -582,61 +391,73 @@ class _HomeScreenState extends State<HomeScreen> {
                 'Buat Turnamen',
                 style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
               ),
-            )
-          : null,
+            ),
     );
   }
 
-  Widget _buildContent(_HomeLayout layout) {
+  Widget _buildContent(PageLayout layout) {
     if (_isLoading) {
-      return const Center(
-        child: CircularProgressIndicator(color: AppColors.primary),
-      );
+      return const Center(child: CircularProgressIndicator(color: AppColors.primary));
     }
     if (_errorMessage != null) {
-      return _ErrorState(
+      return StateMessage(
+        icon: Icons.cloud_off_rounded,
+        iconColor: AppColors.error,
+        title: 'Gagal Terhubung ke Backend',
         message: _errorMessage!,
-        onChangeUrl: _showServerSettingsDialog,
-        onRetry: _loadTournaments,
+        actions: [
+          OutlinedButton.icon(
+            onPressed: _showServerSettingsDialog,
+            icon: const Icon(Icons.settings_rounded, size: 16),
+            label: const Text('Ganti URL API'),
+            style: OutlinedButton.styleFrom(foregroundColor: AppColors.secondary),
+          ),
+          ElevatedButton.icon(
+            onPressed: _loadTournaments,
+            icon: const Icon(Icons.refresh_rounded, size: 16, color: Colors.white),
+            label: const Text('Coba Lagi', style: TextStyle(color: Colors.white)),
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary),
+          ),
+        ],
       );
     }
     if (_tournaments.isEmpty) {
-      return _EmptyState(isHistory: _currentNavIndex == 1);
+      return StateMessage(
+        icon: _isHistory ? Icons.history_toggle_off_rounded : Icons.emoji_events_outlined,
+        title: _isHistory ? 'Belum Ada Riwayat Turnamen' : 'Belum Ada Turnamen Aktif',
+        message: _isHistory
+            ? 'Turnamen yang telah selesai akan otomatis muncul di sini.'
+            : 'Klik tombol "Buat Turnamen" di bawah untuk memulai turnamen baru.',
+      );
     }
 
-    final cols = layout.columns;
-    final rowCount = (_tournaments.length / cols).ceil();
+    // Jumlah kolom kartu dari MediaQuery: HP = 1, tablet = 2, layar lebar = 3.
+    final columns = layout.contentWidth >= 900 ? 3 : (layout.isWide ? 2 : 1);
+    // Kotak ikon status = 13% lebar kartu, dibatasi 40–56 dp.
+    final iconBoxSize = (layout.contentWidth / columns * 0.13).clamp(40.0, 56.0);
 
     return RefreshIndicator(
       color: AppColors.primary,
       backgroundColor: AppColors.bgCard,
       onRefresh: _loadTournaments,
-      child: ListView.builder(
+      child: ListView(
         physics: const AlwaysScrollableScrollPhysics(),
         padding: EdgeInsets.fromLTRB(layout.sidePadding, 4, layout.sidePadding, 80),
-        itemCount: rowCount,
-        itemBuilder: (context, row) {
-          final start = row * cols;
-          // Satu baris berisi 1/2/3 kartu, lebarnya dibagi rata (Expanded).
-          return Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          ResponsiveGrid(
+            columns: columns,
+            gap: layout.gap,
             children: [
-              for (var i = 0; i < cols; i++) ...[
-                if (i > 0) SizedBox(width: layout.gap),
-                Expanded(
-                  child: start + i < _tournaments.length
-                      ? _TournamentCard(
-                          turnamen: _tournaments[start + i],
-                          iconBoxSize: layout.iconBoxSize,
-                          titleFontSize: layout.titleFontSize,
-                          onTap: () => _openDetail(_tournaments[start + i]),
-                        )
-                      : const SizedBox.shrink(),
+              for (final t in _tournaments)
+                _TournamentCard(
+                  turnamen: t,
+                  iconBoxSize: iconBoxSize,
+                  titleFontSize: layout.isNarrow ? 14 : 15,
+                  onTap: () => _openDetail(t),
                 ),
-              ],
             ],
-          );
-        },
+          ),
+        ],
       ),
     );
   }
@@ -644,8 +465,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
 // ===================== WIDGET STATELESS =====================
 
-class _HomeAppBarTitle extends StatelessWidget {
-  const _HomeAppBarTitle({required this.title, required this.fontSize});
+class _AppBarTitle extends StatelessWidget {
+  const _AppBarTitle({required this.title, required this.fontSize});
 
   final String title;
   final double fontSize;
@@ -684,23 +505,23 @@ class _ProfileButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final loggedIn = user != null;
+    final user = this.user;
 
     return IconButton(
       icon: CircleAvatar(
         radius: 14,
-        backgroundColor: loggedIn
-            ? const Color(0xFF10B981).withValues(alpha: 0.2)
+        backgroundColor: user != null
+            ? privateColor.withValues(alpha: 0.2)
             : Colors.white.withValues(alpha: 0.1),
         child: Icon(
-          loggedIn
-              ? AvatarHelper.getIcon(user!['avatar_index'] as int?)
+          user != null
+              ? AvatarHelper.getIcon(user['avatar_index'] as int?)
               : Icons.person_outline_rounded,
           size: 16,
-          color: loggedIn ? const Color(0xFF10B981) : AppColors.textSecondary,
+          color: user != null ? privateColor : AppColors.textSecondary,
         ),
       ),
-      tooltip: loggedIn ? (user!['nickname']?.toString() ?? 'Profil') : 'Masuk',
+      tooltip: user != null ? (user['nickname']?.toString() ?? 'Profil') : 'Masuk',
       onPressed: onPressed,
     );
   }
@@ -731,37 +552,19 @@ class _ProfileInfo extends StatelessWidget {
           style: const TextStyle(color: AppColors.textSecondary, fontSize: 13),
         ),
         const SizedBox(height: 12),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-          decoration: BoxDecoration(
-            color: const Color(0xFF10B981).withValues(alpha: 0.15),
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: const Color(0xFF10B981).withValues(alpha: 0.3)),
-          ),
-          child: const Row(
-            children: [
-              Icon(Icons.check_circle_rounded, size: 14, color: Color(0xFF10B981)),
-              SizedBox(width: 6),
-              Expanded(
-                child: Text(
-                  'Sesi Login Tersimpan di HP (Offline-Ready)',
-                  style: TextStyle(
-                    color: Color(0xFF10B981),
-                    fontSize: 11,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-            ],
-          ),
+        const ColorBadge(
+          text: 'Sesi Login Tersimpan di HP (Offline-Ready)',
+          color: privateColor,
+          icon: Icons.check_circle_rounded,
+          padding: EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         ),
       ],
     );
   }
 }
 
-class _HomeSearchBar extends StatelessWidget {
-  const _HomeSearchBar({
+class _SearchBar extends StatelessWidget {
+  const _SearchBar({
     required this.controller,
     required this.isGuest,
     required this.hintText,
@@ -789,6 +592,7 @@ class _HomeSearchBar extends StatelessWidget {
       ),
       child: TextField(
         controller: controller,
+        // Tamu tidak bisa mengetik: ketukan membuka dialog login.
         readOnly: isGuest,
         onTap: isGuest ? onLocked : null,
         onChanged: (_) => onChanged(),
@@ -813,13 +617,12 @@ class _HomeSearchBar extends StatelessWidget {
                     ),
                   ),
                 )
-              : (controller.text.isNotEmpty
+              : controller.text.isNotEmpty
                   ? IconButton(
-                      icon: const Icon(Icons.close_rounded,
-                          color: AppColors.textMuted, size: 18),
+                      icon: const Icon(Icons.close_rounded, color: AppColors.textMuted, size: 18),
                       onPressed: onClear,
                     )
-                  : null),
+                  : null,
           border: InputBorder.none,
           contentPadding: const EdgeInsets.symmetric(vertical: 14),
         ),
@@ -828,92 +631,63 @@ class _HomeSearchBar extends StatelessWidget {
   }
 }
 
-class _SourceFilterChips extends StatelessWidget {
-  const _SourceFilterChips({
+/// Chip filter. Normal untuk sumber data, [small] untuk filter status.
+class _FilterChips extends StatelessWidget {
+  const _FilterChips({
     required this.filters,
     required this.selected,
     required this.onSelected,
+    this.small = false,
   });
 
   final List<String> filters;
   final String selected;
   final ValueChanged<String> onSelected;
+  final bool small;
 
-  @override
-  Widget build(BuildContext context) {
-    // Wrap: di HP chip turun ke baris berikut kalau tidak muat,
-    // di layar lebar semua chip sebaris.
-    return Wrap(
-      spacing: 8,
-      runSpacing: 6,
-      children: [
-        for (final filter in filters)
-          ChoiceChip(
-            label: Text(filter),
-            selected: filter == selected,
-            onSelected: (_) => onSelected(filter),
-            backgroundColor: AppColors.bgCard,
-            selectedColor: filter.contains('Privat')
-                ? const Color(0xFF059669)
-                : AppColors.primary,
-            labelStyle: TextStyle(
-              color: filter == selected ? Colors.white : AppColors.textSecondary,
-              fontSize: 12,
-              fontWeight: filter == selected ? FontWeight.bold : FontWeight.w500,
-            ),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(10),
-              side: BorderSide(
-                color: filter == selected
-                    ? Colors.transparent
-                    : Colors.white.withValues(alpha: 0.06),
-              ),
-            ),
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
-          ),
-      ],
+  Widget _chip(String filter) {
+    final isSelected = filter == selected;
+    final Color borderColor;
+    if (small) {
+      borderColor = isSelected ? AppColors.secondary : Colors.transparent;
+    } else {
+      borderColor = isSelected ? Colors.transparent : Colors.white.withValues(alpha: 0.06);
+    }
+
+    return ChoiceChip(
+      label: Text(filter),
+      selected: isSelected,
+      onSelected: (_) => onSelected(filter),
+      backgroundColor: small ? AppColors.bgDarkSecondary : AppColors.bgCard,
+      selectedColor: small
+          ? AppColors.secondary.withValues(alpha: 0.3)
+          : (filter == _sourcePrivate ? privateColorDark : AppColors.primary),
+      labelStyle: TextStyle(
+        color: isSelected
+            ? Colors.white
+            : (small ? AppColors.textMuted : AppColors.textSecondary),
+        fontSize: small ? 11 : 12,
+        fontWeight: isSelected
+            ? FontWeight.bold
+            : (small ? FontWeight.normal : FontWeight.w500),
+      ),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(small ? 8 : 10),
+        side: BorderSide(color: borderColor),
+      ),
+      padding: small
+          ? const EdgeInsets.symmetric(horizontal: 8)
+          : const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
     );
   }
-}
-
-class _StatusFilterChips extends StatelessWidget {
-  const _StatusFilterChips({
-    required this.filters,
-    required this.selected,
-    required this.onSelected,
-  });
-
-  final List<String> filters;
-  final String selected;
-  final ValueChanged<String> onSelected;
 
   @override
   Widget build(BuildContext context) {
+    // Wrap: di HP chip turun ke baris berikut kalau tidak muat.
     return Wrap(
       spacing: 8,
       runSpacing: 6,
-      children: [
-        for (final filter in filters)
-          ChoiceChip(
-            label: Text(filter),
-            selected: filter == selected,
-            onSelected: (_) => onSelected(filter),
-            backgroundColor: AppColors.bgDarkSecondary,
-            selectedColor: AppColors.secondary.withValues(alpha: 0.3),
-            labelStyle: TextStyle(
-              color: filter == selected ? Colors.white : AppColors.textMuted,
-              fontSize: 11,
-              fontWeight: filter == selected ? FontWeight.bold : FontWeight.normal,
-            ),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(8),
-              side: BorderSide(
-                color: filter == selected ? AppColors.secondary : Colors.transparent,
-              ),
-            ),
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-          ),
-      ],
+      children: [for (final filter in filters) _chip(filter)],
     );
   }
 }
@@ -959,35 +733,17 @@ class _TournamentCard extends StatelessWidget {
   final double titleFontSize;
   final VoidCallback onTap;
 
-  static const _privateColor = Color(0xFF10B981);
-
-  static Color statusColor(String status) {
-    switch (status) {
-      case 'Berlangsung':
-        return AppColors.secondary;
-      case 'Selesai':
-        return AppColors.success;
-      default:
-        return const Color(0xFF6366F1);
-    }
-  }
-
-  static IconData statusIcon(String status) {
-    switch (status) {
-      case 'Berlangsung':
-        return Icons.play_circle_fill_rounded;
-      case 'Selesai':
-        return Icons.emoji_events_rounded;
-      default:
-        return Icons.schedule_rounded;
-    }
-  }
+  static IconData _statusIcon(String status) => switch (status) {
+        'Berlangsung' => Icons.play_circle_fill_rounded,
+        'Selesai' => Icons.emoji_events_rounded,
+        _ => Icons.schedule_rounded,
+      };
 
   @override
   Widget build(BuildContext context) {
     final t = turnamen;
     final color = statusColor(t.status);
-    final dateFormat = DateFormat('dd MMM yyyy, HH:mm');
+    final tanggal = DateFormat('dd MMM yyyy, HH:mm').format(t.tanggalMulai);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -996,7 +752,7 @@ class _TournamentCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
           color: t.isPrivate
-              ? _privateColor.withValues(alpha: 0.25)
+              ? privateColor.withValues(alpha: 0.25)
               : Colors.white.withValues(alpha: 0.06),
         ),
       ),
@@ -1017,7 +773,7 @@ class _TournamentCard extends StatelessWidget {
                     color: color.withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(12),
                   ),
-                  child: Icon(statusIcon(t.status), color: color, size: iconBoxSize * 0.5),
+                  child: Icon(_statusIcon(t.status), color: color, size: iconBoxSize * 0.5),
                 ),
                 const SizedBox(width: 12),
                 // Kolom 2: info turnamen (ambil sisa lebar)
@@ -1025,7 +781,7 @@ class _TournamentCard extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      _SourceBadge(isPrivate: t.isPrivate),
+                      PrivacyBadge(isPrivate: t.isPrivate, small: true),
                       const SizedBox(height: 4),
                       Text(
                         t.namaTurnamen,
@@ -1039,7 +795,7 @@ class _TournamentCard extends StatelessWidget {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        '${t.tipeGame} · ${t.kuota} Tim · ${dateFormat.format(t.tanggalMulai)}',
+                        '${t.tipeGame} · ${t.kuota} Tim · $tanggal',
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(color: AppColors.textMuted, fontSize: 12),
@@ -1062,190 +818,9 @@ class _TournamentCard extends StatelessWidget {
                 ),
                 const SizedBox(width: 8),
                 // Kolom 3: status
-                _StatusBadge(status: t.status, color: color),
+                ColorBadge(text: t.status, color: color),
               ],
             ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _SourceBadge extends StatelessWidget {
-  const _SourceBadge({required this.isPrivate});
-
-  final bool isPrivate;
-
-  @override
-  Widget build(BuildContext context) {
-    final color = isPrivate ? const Color(0xFF10B981) : AppColors.secondary;
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.15),
-        borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: color.withValues(alpha: 0.3)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            isPrivate ? Icons.lock_rounded : Icons.public_rounded,
-            size: 10,
-            color: color,
-          ),
-          const SizedBox(width: 4),
-          Text(
-            isPrivate ? 'Privat (Lokal HP)' : 'Publik',
-            style: TextStyle(color: color, fontSize: 10, fontWeight: FontWeight.bold),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _StatusBadge extends StatelessWidget {
-  const _StatusBadge({required this.status, required this.color});
-
-  final String status;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.15),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: color.withValues(alpha: 0.3)),
-      ),
-      child: Text(
-        status,
-        style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.bold),
-      ),
-    );
-  }
-}
-
-class _EmptyState extends StatelessWidget {
-  const _EmptyState({required this.isHistory});
-
-  final bool isHistory;
-
-  @override
-  Widget build(BuildContext context) {
-    final width = MediaQuery.sizeOf(context).width;
-
-    return Center(
-      child: SingleChildScrollView(
-        padding: EdgeInsets.all(width * 0.08),
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 420),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                isHistory
-                    ? Icons.history_toggle_off_rounded
-                    : Icons.emoji_events_outlined,
-                color: AppColors.textMuted,
-                size: (width * 0.14).clamp(44.0, 64.0),
-              ),
-              const SizedBox(height: 16),
-              Text(
-                isHistory ? 'Belum Ada Riwayat Turnamen' : 'Belum Ada Turnamen Aktif',
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  color: AppColors.textPrimary,
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                isHistory
-                    ? 'Turnamen yang telah selesai akan otomatis muncul di sini.'
-                    : 'Klik tombol "Buat Turnamen" di bawah untuk memulai turnamen baru.',
-                textAlign: TextAlign.center,
-                style: const TextStyle(color: AppColors.textSecondary, fontSize: 13),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _ErrorState extends StatelessWidget {
-  const _ErrorState({
-    required this.message,
-    required this.onChangeUrl,
-    required this.onRetry,
-  });
-
-  final String message;
-  final VoidCallback onChangeUrl;
-  final VoidCallback onRetry;
-
-  @override
-  Widget build(BuildContext context) {
-    final width = MediaQuery.sizeOf(context).width;
-
-    return Center(
-      child: SingleChildScrollView(
-        padding: EdgeInsets.all(width * 0.08),
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 420),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                Icons.cloud_off_rounded,
-                color: AppColors.error,
-                size: (width * 0.14).clamp(44.0, 64.0),
-              ),
-              const SizedBox(height: 16),
-              const Text(
-                'Gagal Terhubung ke Backend',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: AppColors.textPrimary,
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                message,
-                textAlign: TextAlign.center,
-                style: const TextStyle(color: AppColors.textSecondary, fontSize: 13),
-              ),
-              const SizedBox(height: 20),
-              // Wrap: dua tombol sebaris, turun ke bawah kalau layar sempit.
-              Wrap(
-                alignment: WrapAlignment.center,
-                spacing: 12,
-                runSpacing: 8,
-                children: [
-                  OutlinedButton.icon(
-                    onPressed: onChangeUrl,
-                    icon: const Icon(Icons.settings_rounded, size: 16),
-                    label: const Text('Ganti URL API'),
-                    style: OutlinedButton.styleFrom(foregroundColor: AppColors.secondary),
-                  ),
-                  ElevatedButton.icon(
-                    onPressed: onRetry,
-                    icon: const Icon(Icons.refresh_rounded, size: 16, color: Colors.white),
-                    label: const Text('Coba Lagi', style: TextStyle(color: Colors.white)),
-                    style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary),
-                  ),
-                ],
-              ),
-            ],
           ),
         ),
       ),

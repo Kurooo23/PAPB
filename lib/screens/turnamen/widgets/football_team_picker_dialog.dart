@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:get/get.dart';
+
 import '../../../data/data_sources/football_teams_data.dart';
 
 class FootballTeamPickerResult {
@@ -224,56 +226,32 @@ class _FootballTeamPickerDialogState extends State<FootballTeamPickerDialog> {
     });
   }
 
-  void _nextLeague() {
-    final leagues = FootballTeamsData.leagues;
-    final idx = (leagues.indexOf(_selectedLeague) + 1) % leagues.length;
-    _onLeagueChanged(leagues[idx]);
+  /// Pindah ke item sebelumnya (-1) / berikutnya (+1), berputar di ujung daftar.
+  static String _cycle(List<String> items, String current, int step) {
+    final index = (items.indexOf(current) + step) % items.length;
+    return items[index < 0 ? index + items.length : index];
   }
 
-  void _prevLeague() {
-    final leagues = FootballTeamsData.leagues;
-    final idx = (leagues.indexOf(_selectedLeague) - 1 + leagues.length) % leagues.length;
-    _onLeagueChanged(leagues[idx]);
-  }
+  void _cycleLeague(int step) =>
+      _onLeagueChanged(_cycle(FootballTeamsData.leagues, _selectedLeague, step));
 
-  void _nextDivision() {
+  void _cycleDivision(int step) {
     final divisions = FootballTeamsData.getDivisions(_selectedLeague);
-    if (divisions.length <= 1) return;
-    final idx = (divisions.indexOf(_selectedDivision) + 1) % divisions.length;
-    _onDivisionChanged(divisions[idx]);
+    if (divisions.length > 1) _onDivisionChanged(_cycle(divisions, _selectedDivision, step));
   }
 
-  void _prevDivision() {
-    final divisions = FootballTeamsData.getDivisions(_selectedLeague);
-    if (divisions.length <= 1) return;
-    final idx = (divisions.indexOf(_selectedDivision) - 1 + divisions.length) % divisions.length;
-    _onDivisionChanged(divisions[idx]);
-  }
-
-  void _nextClub() {
-    if (_currentClubIndex < _currentClubs.length - 1) {
-      _pageController.nextPage(
+  /// Geser carousel klub satu langkah; dari ujung lompat ke ujung lainnya.
+  void _moveClub(int step) {
+    final target = _currentClubIndex + step;
+    if (target >= 0 && target < _currentClubs.length) {
+      _pageController.animateToPage(
+        target,
         duration: const Duration(milliseconds: 250),
         curve: Curves.easeInOut,
       );
     } else {
       _pageController.animateToPage(
-        0,
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeInOut,
-      );
-    }
-  }
-
-  void _prevClub() {
-    if (_currentClubIndex > 0) {
-      _pageController.previousPage(
-        duration: const Duration(milliseconds: 250),
-        curve: Curves.easeInOut,
-      );
-    } else {
-      _pageController.animateToPage(
-        _currentClubs.length - 1,
+        step > 0 ? 0 : _currentClubs.length - 1,
         duration: const Duration(milliseconds: 300),
         curve: Curves.easeInOut,
       );
@@ -314,9 +292,9 @@ class _FootballTeamPickerDialogState extends State<FootballTeamPickerDialog> {
         ? (club.startsWith('Timnas') ? club : 'Timnas $club')
         : club;
 
-    Navigator.pop(
-      context,
-      FootballTeamPickerResult(
+    // GetX: tutup dialog + kirim hasil
+    Get.back(
+      result: FootballTeamPickerResult(
         clubName: formattedClub,
         leagueName: _selectedLeague,
         divisionName: _selectedDivision,
@@ -369,7 +347,7 @@ class _FootballTeamPickerDialogState extends State<FootballTeamPickerDialog> {
                           ),
                           IconButton(
                             icon: const Icon(Icons.close, color: Colors.white70),
-                            onPressed: () => Navigator.pop(ctx),
+                            onPressed: () => Get.back(),
                           ),
                         ],
                       ),
@@ -418,7 +396,7 @@ class _FootballTeamPickerDialogState extends State<FootballTeamPickerDialog> {
                                 color: Colors.white38,
                               ),
                               onTap: () {
-                                Navigator.pop(ctx);
+                                Get.back();
                                 setState(() => _jumpTo(originalIdx));
                               },
                             );
@@ -490,7 +468,7 @@ class _FootballTeamPickerDialogState extends State<FootballTeamPickerDialog> {
                           ? const Icon(Icons.check, color: _PickerPalette.accent)
                           : null,
                       onTap: () {
-                        Navigator.pop(ctx);
+                        Get.back();
                         onSelected(item);
                       },
                     );
@@ -541,7 +519,7 @@ class _FootballTeamPickerDialogState extends State<FootballTeamPickerDialog> {
               participantIndex: widget.participantIndex,
               padding: size.padding,
               onSearch: _showQuickSearchModal,
-              onClose: () => Navigator.pop(context),
+              onClose: () => Get.back(),
             ),
             // Baris 2: isi (selector, carousel, tombol)
             Expanded(
@@ -552,8 +530,8 @@ class _FootballTeamPickerDialogState extends State<FootballTeamPickerDialog> {
                     _HorizontalSelector(
                       label: 'LIGA / KATEGORI',
                       title: '$leagueFlag $_selectedLeague',
-                      onPrev: _prevLeague,
-                      onNext: _nextLeague,
+                      onPrev: () => _cycleLeague(-1),
+                      onNext: () => _cycleLeague(1),
                       onTapTitle: () => _showSelectionSheet(
                         title: 'Pilih Liga',
                         items: FootballTeamsData.leagues,
@@ -567,8 +545,8 @@ class _FootballTeamPickerDialogState extends State<FootballTeamPickerDialog> {
                         label: 'DIVISI / KASTA',
                         title: _selectedDivision,
                         isSecondary: true,
-                        onPrev: _prevDivision,
-                        onNext: _nextDivision,
+                        onPrev: () => _cycleDivision(-1),
+                        onNext: () => _cycleDivision(1),
                         onTapTitle: () => _showSelectionSheet(
                           title: 'Pilih Divisi',
                           items: divisions,
@@ -605,14 +583,14 @@ class _FootballTeamPickerDialogState extends State<FootballTeamPickerDialog> {
                             left: 0,
                             child: _ArrowButton(
                               icon: Icons.arrow_back_ios_new_rounded,
-                              onPressed: _prevClub,
+                              onPressed: () => _moveClub(-1),
                             ),
                           ),
                           Positioned(
                             right: 0,
                             child: _ArrowButton(
                               icon: Icons.arrow_forward_ios_rounded,
-                              onPressed: _nextClub,
+                              onPressed: () => _moveClub(1),
                             ),
                           ),
                         ],

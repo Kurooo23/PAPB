@@ -1,7 +1,11 @@
+import 'dart:math';
+
 import 'package:flutter/material.dart';
+import 'package:get/get.dart';
 import 'package:intl/intl.dart';
 
 import '../../core/theme/app_colors.dart';
+import '../../data/models/klasemen_model.dart';
 import '../../data/models/pertandingan_model.dart';
 import '../../data/models/peserta_model.dart';
 import '../../data/models/turnamen_model.dart';
@@ -9,82 +13,32 @@ import '../../data/services/api_service.dart';
 import '../../data/services/local_tournament_service.dart';
 import '../../routes/app_routes.dart';
 import '../pertandingan/input_skor_dialog.dart';
+import '../widgets/common_widgets.dart';
 
-class KlasemenItem {
-  final String idPeserta;
-  final String namaPeserta;
-  int main;
-  int menang;
-  int seri;
-  int kalah;
-  int gm; // Gol/Skor Masuk
-  int gk; // Gol/Skor Kemasukan
-  int get sg => gm - gk; // Selisih Skor
-  int get poin => (menang * 3) + (seri * 1);
+const _gold = Color(0xFFFFD700);
+const _primaryGradient = LinearGradient(colors: [AppColors.primary, Color(0xFF4F46E5)]);
 
-  KlasemenItem({
-    required this.idPeserta,
-    required this.namaPeserta,
-    this.main = 0,
-    this.menang = 0,
-    this.seri = 0,
-    this.kalah = 0,
-    this.gm = 0,
-    this.gk = 0,
-  });
+/// Teks skor sebuah laga. Catur seri BO: poin pecahan (1½ – ½) dihitung dari
+/// jumlah menang yang tersimpan. Cabang lain: skor apa adanya.
+(String, String) _scoreTexts(PertandinganModel m, int? chessBestOf) {
+  if (chessBestOf == null) return ('${m.skorPeserta1}', '${m.skorPeserta2}');
+  final (h1, h2) = chessHalfPoints(
+    wins1: m.skorPeserta1,
+    wins2: m.skorPeserta2,
+    bestOf: chessBestOf,
+    isFinished: m.status == 'Selesai',
+  );
+  return (formatHalfPoints(h1), formatHalfPoints(h2));
 }
 
-/// Ukuran layout detail dihitung dari MediaQuery.
-/// - Padding samping = 4% lebar layar, isi dibatasi 1100 dp.
-/// - Daftar laga & peserta: 1 kolom di HP, 2 kolom (1:1) di layar >= 720 dp.
-/// - Lebar kolom bagan = 62% lebar layar (200–280 dp), bukan angka tetap.
-class _DetailLayout {
-  const _DetailLayout._({
-    required this.sidePadding,
-    required this.listColumns,
-    required this.gap,
-    required this.bracketColumnWidth,
-    required this.bracketConnectorWidth,
-    required this.showTabIcons,
-  });
-
-  factory _DetailLayout.of(BuildContext context) {
-    final screen = MediaQuery.sizeOf(context);
-    const maxContentWidth = 1100.0;
-
-    final contentWidth =
-        screen.width > maxContentWidth ? maxContentWidth : screen.width;
-    final extraSpace =
-        screen.width > maxContentWidth ? (screen.width - maxContentWidth) / 2 : 0.0;
-
-    return _DetailLayout._(
-      sidePadding: extraSpace + contentWidth * 0.04,
-      listColumns: contentWidth >= 720 ? 2 : 1,
-      gap: contentWidth * 0.03,
-      bracketColumnWidth: (contentWidth * 0.62).clamp(200.0, 280.0),
-      bracketConnectorWidth: (contentWidth * 0.07).clamp(20.0, 40.0),
-      // Di layar sempit ikon tab disembunyikan supaya label tidak terpotong.
-      showTabIcons: screen.width >= 380,
-    );
-  }
-
-  final double sidePadding;
-  final int listColumns;
-  final double gap;
-  final double bracketColumnWidth;
-  final double bracketConnectorWidth;
-  final bool showTabIcons;
-}
+/// Nama babak tanpa awalan "Leg 1 - " / "Leg 2 - ".
+String _roundName(String babak) => babak.replaceFirst(RegExp(r'^Leg [12] - '), '');
 
 class DetailTurnamenScreen extends StatefulWidget {
+  const DetailTurnamenScreen({super.key, required this.idTurnamen, this.isPrivate});
+
   final String idTurnamen;
   final bool? isPrivate;
-
-  const DetailTurnamenScreen({
-    super.key,
-    required this.idTurnamen,
-    this.isPrivate,
-  });
 
   @override
   State<DetailTurnamenScreen> createState() => _DetailTurnamenScreenState();
@@ -92,26 +46,27 @@ class DetailTurnamenScreen extends StatefulWidget {
 
 class _DetailTurnamenScreenState extends State<DetailTurnamenScreen>
     with SingleTickerProviderStateMixin {
-  late TabController _tabController;
+  late final _tabController = TabController(length: 3, vsync: this);
+  late bool _isPrivate = widget.isPrivate ?? false;
   TurnamenModel? _turnamen;
   List<PertandinganModel> _pertandinganList = [];
   List<PesertaModel> _pesertaList = [];
   bool _isLoading = true;
   String? _errorMessage;
-  late bool _isPrivate;
 
-  bool get _isKnockoutFormat =>
+  /// BO catur kalau turnamen catur seri (BO3/5/7), null untuk lainnya.
+  int? get _chessBestOf {
+    final t = _turnamen;
+    return t != null && t.tipeGame == 'Catur' && t.bestOf > 1 ? t.bestOf : null;
+  }
+
+  bool get _isKnockout =>
       _turnamen?.formatBracket == 'Single Elimination' ||
       _turnamen?.formatBracket == 'Double Elimination';
-
-  final ApiService _apiService = ApiService.instance;
-  final LocalTournamentService _localService = LocalTournamentService.instance;
 
   @override
   void initState() {
     super.initState();
-    _isPrivate = widget.isPrivate ?? false;
-    _tabController = TabController(length: 3, vsync: this);
     _loadData();
   }
 
@@ -129,58 +84,82 @@ class _DetailTurnamenScreenState extends State<DetailTurnamenScreen>
       _errorMessage = null;
     });
 
+    final local = LocalTournamentService.instance;
     try {
       Map<String, dynamic> detail;
       if (_isPrivate) {
-        detail = await _localService.getTurnamenDetail(widget.idTurnamen);
+        detail = await local.getTurnamenDetail(widget.idTurnamen);
       } else {
         try {
-          detail = await _apiService.getTurnamenDetail(widget.idTurnamen);
-        } catch (e) {
+          detail = await ApiService.instance.getTurnamenDetail(widget.idTurnamen);
+        } catch (_) {
           // Fallback ke SQLite lokal kalau backend gagal
-          detail = await _localService.getTurnamenDetail(widget.idTurnamen);
-          _isPrivate = true;
+          detail = await local.getTurnamenDetail(widget.idTurnamen);
         }
       }
 
-      if (mounted) {
-        final loadedTurnamen = detail['turnamen'] as TurnamenModel;
-        setState(() {
-          _turnamen = loadedTurnamen;
-          _isPrivate = loadedTurnamen.isPrivate;
-          _pesertaList = detail['peserta'] as List<PesertaModel>;
-          _pertandinganList = detail['pertandingan'] as List<PertandinganModel>;
-          _isLoading = false;
-        });
-      }
+      if (!mounted) return;
+      setState(() {
+        _turnamen = detail['turnamen'] as TurnamenModel;
+        _isPrivate = _turnamen!.isPrivate;
+        _pesertaList = detail['peserta'] as List<PesertaModel>;
+        _pertandinganList = detail['pertandingan'] as List<PertandinganModel>;
+        _isLoading = false;
+      });
     } catch (e) {
-      if (mounted) {
-        setState(() {
-          _errorMessage = e.toString().replaceFirst('Exception: ', '');
-          _isLoading = false;
-        });
-      }
+      if (!mounted) return;
+      setState(() {
+        _errorMessage = errorText(e);
+        _isLoading = false;
+      });
     }
   }
 
   List<KlasemenItem> _calculateKlasemen() {
-    final Map<String, KlasemenItem> stats = {
+    final stats = {
       for (final p in _pesertaList)
-        p.idPeserta: KlasemenItem(idPeserta: p.idPeserta, namaPeserta: p.namaPeserta),
+        p.idPeserta: KlasemenItem(
+          idPeserta: p.idPeserta,
+          namaPeserta: p.namaPeserta,
+          isChess: _chessBestOf != null,
+        ),
     };
 
     for (final m in _pertandinganList) {
-      if (m.status != 'Selesai' || m.idPeserta1 == null || m.idPeserta2 == null) continue;
+      if (m.status != 'Selesai') continue;
       final p1 = stats[m.idPeserta1];
       final p2 = stats[m.idPeserta2];
       if (p1 == null || p2 == null) continue;
 
-      p1.main++;
-      p2.main++;
-      p1.gm += m.skorPeserta1;
-      p1.gk += m.skorPeserta2;
-      p2.gm += m.skorPeserta2;
-      p2.gk += m.skorPeserta1;
+      // Catur: dihitung per game. Skor tersimpan = jumlah game menang; game
+      // utama yang tidak dimenangkan siapa pun dihitung remis.
+      final chessBestOf = _chessBestOf;
+      if (chessBestOf != null) {
+        final wins1 = m.skorPeserta1;
+        final wins2 = m.skorPeserta2;
+        final draws = max(0, chessBestOf - 1 - wins1 - wins2);
+        final games = wins1 + wins2 + draws;
+        p1
+          ..main += games
+          ..menang += wins1
+          ..seri += draws
+          ..kalah += wins2;
+        p2
+          ..main += games
+          ..menang += wins2
+          ..seri += draws
+          ..kalah += wins1;
+        continue;
+      }
+
+      p1
+        ..main += 1
+        ..gm += m.skorPeserta1
+        ..gk += m.skorPeserta2;
+      p2
+        ..main += 1
+        ..gm += m.skorPeserta2
+        ..gk += m.skorPeserta1;
 
       if (m.skorPeserta1 > m.skorPeserta2) {
         p1.menang++;
@@ -194,7 +173,9 @@ class _DetailTurnamenScreenState extends State<DetailTurnamenScreen>
       }
     }
 
-    final list = stats.values.toList()
+    // Urutan: poin, selisih gol, gol masuk, menang, lalu nama.
+    // (Catur: gol selalu 0, jadi langsung poin lalu menang.)
+    return stats.values.toList()
       ..sort((a, b) {
         if (b.poin != a.poin) return b.poin.compareTo(a.poin);
         if (b.sg != a.sg) return b.sg.compareTo(a.sg);
@@ -202,20 +183,17 @@ class _DetailTurnamenScreenState extends State<DetailTurnamenScreen>
         if (b.menang != a.menang) return b.menang.compareTo(a.menang);
         return a.namaPeserta.compareTo(b.namaPeserta);
       });
-    return list;
   }
 
   Map<String, List<PertandinganModel>> _groupedMatches() {
-    final Map<String, List<PertandinganModel>> grouped = {};
+    final grouped = <String, List<PertandinganModel>>{};
     for (final match in _pertandinganList) {
-      final roundName = _isKnockoutFormat
-          ? match.babak.replaceFirst(RegExp(r'^Leg [12] - '), '')
-          : match.babak;
-      grouped.putIfAbsent(roundName, () => []).add(match);
+      final round = _isKnockout ? _roundName(match.babak) : match.babak;
+      grouped.putIfAbsent(round, () => []).add(match);
     }
+    if (!_isKnockout) return grouped;
 
-    if (!_isKnockoutFormat) return grouped;
-
+    // Babak gugur: urut sesuai laga pertama, Juara 3 sebelum Final.
     final rounds = grouped.entries.toList()
       ..sort((a, b) {
         if (a.key == 'Final' && b.key == 'Perebutan Juara 3') return 1;
@@ -238,198 +216,115 @@ class _DetailTurnamenScreenState extends State<DetailTurnamenScreen>
   }
 
   Future<void> _deleteTurnamen() async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.bgDarkSecondary,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Row(
-          children: [
-            Icon(Icons.warning_amber_rounded, color: AppColors.error),
-            SizedBox(width: 8),
-            Flexible(
-              child: Text(
-                'Hapus Turnamen',
-                style: TextStyle(color: AppColors.textPrimary, fontSize: 18),
-              ),
-            ),
-          ],
-        ),
-        content: Text(
-          'Apakah kamu yakin ingin menghapus turnamen "${_turnamen?.namaTurnamen}"? '
+    final confirmed = await showConfirmDialog(
+      icon: Icons.warning_amber_rounded,
+      color: AppColors.error,
+      title: 'Hapus Turnamen',
+      message: 'Apakah kamu yakin ingin menghapus turnamen "${_turnamen?.namaTurnamen}"? '
           'Semua data peserta dan jadwal pertandingan di '
           '${_isPrivate ? 'database lokal HP' : 'server backend'} akan dihapus secara permanen.',
-          style: const TextStyle(color: AppColors.textSecondary, fontSize: 13),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Batal', style: TextStyle(color: AppColors.textSecondary)),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: AppColors.error),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Hapus', style: TextStyle(color: Colors.white)),
-          ),
-        ],
-      ),
+      confirmLabel: 'Hapus',
     );
-
-    if (confirm != true) return;
+    if (!confirmed) return;
 
     try {
       if (_isPrivate) {
-        await _localService.deleteTurnamen(widget.idTurnamen);
+        await LocalTournamentService.instance.deleteTurnamen(widget.idTurnamen);
       } else {
-        await _apiService.deleteTurnamen(widget.idTurnamen);
+        await ApiService.instance.deleteTurnamen(widget.idTurnamen);
       }
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(_isPrivate
-                ? 'Turnamen berhasil dihapus dari database lokal HP'
-                : 'Turnamen berhasil dihapus dari backend server'),
-            backgroundColor: AppColors.success,
-          ),
-        );
-        // Push/Pop: kembali + bawa hasil
-        Navigator.pop(context, true);
-      }
+      if (!mounted) return;
+      context.showSnack(
+        _isPrivate
+            ? 'Turnamen berhasil dihapus dari database lokal HP'
+            : 'Turnamen berhasil dihapus dari backend server',
+        color: AppColors.success,
+      );
+      // Push/Pop: kembali + bawa hasil
+      Navigator.pop(context, true);
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Gagal menghapus: $e'), backgroundColor: AppColors.error),
-        );
-      }
+      if (mounted) context.showSnack('Gagal menghapus: $e', color: AppColors.error);
     }
-  }
-
-  void _openInputSkor(PertandinganModel match) {
-    if (_turnamen?.isLocked == true) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Turnamen telah diakhiri. Skor tidak dapat diedit lagi.'),
-          backgroundColor: AppColors.error,
-        ),
-      );
-      return;
-    }
-
-    if (match.idPeserta1 == null || match.idPeserta2 == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Peserta pertandingan ini belum ditentukan (menunggu babak sebelumnya).'),
-          backgroundColor: AppColors.warning,
-        ),
-      );
-      return;
-    }
-
-    int? previousLegScore1;
-    int? previousLegScore2;
-    if (_turnamen?.jumlahLeg == 2 && match.babak.startsWith('Leg 2 - ')) {
-      final roundName = match.babak.replaceFirst('Leg 2 - ', '');
-      for (final previousLeg in _pertandinganList) {
-        if (previousLeg.babak == 'Leg 1 - $roundName' &&
-            previousLeg.idPeserta1 == match.idPeserta2 &&
-            previousLeg.idPeserta2 == match.idPeserta1) {
-          previousLegScore1 = previousLeg.skorPeserta2;
-          previousLegScore2 = previousLeg.skorPeserta1;
-          break;
-        }
-      }
-    }
-
-    showDialog(
-      context: context,
-      builder: (ctx) => InputSkorDialog(
-        match: match,
-        isPrivate: _isPrivate,
-        isKnockout: _turnamen?.formatBracket == 'Single Elimination',
-        isTwoLeg: _turnamen?.jumlahLeg == 2,
-        previousLegScore1: previousLegScore1,
-        previousLegScore2: previousLegScore2,
-        onSaved: _loadData,
-      ),
-    );
   }
 
   Future<void> _akhiriTurnamen() async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.bgDarkSecondary,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Row(
-          children: [
-            Icon(Icons.lock_rounded, color: AppColors.warning),
-            SizedBox(width: 8),
-            Flexible(
-              child: Text(
-                'Akhiri Turnamen?',
-                style: TextStyle(color: AppColors.textPrimary, fontSize: 18),
-              ),
-            ),
-          ],
-        ),
-        content: const Text(
-          'Setelah turnamen diakhiri, semua skor akan dikunci dan tidak dapat diedit lagi.\n\nApakah kamu yakin ingin mengakhiri turnamen ini?',
-          style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Batal', style: TextStyle(color: AppColors.textSecondary)),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.warning,
-              foregroundColor: Colors.black,
-            ),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Ya, Akhiri Turnamen', style: TextStyle(fontWeight: FontWeight.bold)),
-          ),
-        ],
-      ),
+    final confirmed = await showConfirmDialog(
+      icon: Icons.lock_rounded,
+      color: AppColors.warning,
+      title: 'Akhiri Turnamen?',
+      message: 'Setelah turnamen diakhiri, semua skor akan dikunci dan tidak dapat diedit '
+          'lagi.\n\nApakah kamu yakin ingin mengakhiri turnamen ini?',
+      confirmLabel: 'Ya, Akhiri Turnamen',
+      confirmTextColor: Colors.black,
     );
-
-    if (confirm != true) return;
+    if (!confirmed) return;
 
     try {
       final updated = _turnamen!.copyWith(status: 'Selesai', isLocked: true);
       if (_isPrivate) {
-        await _localService.updateTurnamen(updated);
+        await LocalTournamentService.instance.updateTurnamen(updated);
       } else {
-        await _apiService.updateTurnamen(updated);
+        await ApiService.instance.updateTurnamen(updated);
       }
-      if (mounted) {
-        setState(() => _turnamen = updated);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Turnamen telah diakhiri! Skor telah dikunci.'),
-            backgroundColor: AppColors.success,
-          ),
-        );
-        _loadData();
-      }
+      if (!mounted) return;
+      setState(() => _turnamen = updated);
+      context.showSnack('Turnamen telah diakhiri! Skor telah dikunci.', color: AppColors.success);
+      _loadData();
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Gagal mengakhiri turnamen: $e'),
-            backgroundColor: AppColors.error,
-          ),
-        );
-      }
+      if (mounted) context.showSnack('Gagal mengakhiri turnamen: $e', color: AppColors.error);
     }
+  }
+
+  void _openInputSkor(PertandinganModel match) {
+    final t = _turnamen!;
+    if (t.isLocked) {
+      context.showSnack(
+        'Turnamen telah diakhiri. Skor tidak dapat diedit lagi.',
+        color: AppColors.error,
+      );
+      return;
+    }
+    if (match.idPeserta1 == null || match.idPeserta2 == null) {
+      context.showSnack(
+        'Peserta pertandingan ini belum ditentukan (menunggu babak sebelumnya).',
+        color: AppColors.warning,
+      );
+      return;
+    }
+
+    // Leg 2: cari skor Leg 1 (posisi kandang/tandang terbalik) untuk agregat.
+    PertandinganModel? previousLeg;
+    if (t.jumlahLeg == 2 && match.babak.startsWith('Leg 2 - ')) {
+      final round = _roundName(match.babak);
+      previousLeg = _pertandinganList
+          .where((leg) =>
+              leg.babak == 'Leg 1 - $round' &&
+              leg.idPeserta1 == match.idPeserta2 &&
+              leg.idPeserta2 == match.idPeserta1)
+          .firstOrNull;
+    }
+
+    // GetX: buka dialog tanpa context
+    Get.dialog(
+      InputSkorDialog(
+        match: match,
+        isPrivate: _isPrivate,
+        isKnockout: t.formatBracket == 'Single Elimination',
+        isTwoLeg: t.jumlahLeg == 2,
+        previousLegScore1: previousLeg?.skorPeserta2,
+        previousLegScore2: previousLeg?.skorPeserta1,
+        isBasket: t.tipeGame == 'Bola Basket',
+        bestOf: t.bestOf,
+        isChess: t.tipeGame == 'Catur',
+        onSaved: _loadData,
+      ),
+    );
   }
 
   // ===================== BUILD =====================
 
   @override
   Widget build(BuildContext context) {
-    final layout = _DetailLayout.of(context);
-
     if (_isLoading) {
       return const Scaffold(
         backgroundColor: AppColors.bgDark,
@@ -437,20 +332,31 @@ class _DetailTurnamenScreenState extends State<DetailTurnamenScreen>
       );
     }
 
-    if (_errorMessage != null || _turnamen == null) {
+    final t = _turnamen;
+    if (_errorMessage != null || t == null) {
       return Scaffold(
         backgroundColor: AppColors.bgDark,
         appBar: AppBar(title: const Text('Detail Turnamen')),
-        body: _ErrorView(
+        body: StateMessage(
+          icon: Icons.error_outline_rounded,
+          iconColor: AppColors.error,
           message: _errorMessage ?? 'Data tidak ditemukan',
-          onRetry: _loadData,
+          actions: [
+            ElevatedButton(
+              onPressed: _loadData,
+              style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary),
+              child: const Text('Coba Lagi', style: TextStyle(color: Colors.white)),
+            ),
+          ],
         ),
       );
     }
 
-    final t = _turnamen!;
-    final selesaiCount = _pertandinganList.where((m) => m.status == 'Selesai').length;
-    final totalCount = _pertandinganList.length;
+    // MediaQuery: padding 4% lebar layar, isi maks 1100 dp. Daftar laga &
+    // peserta 2 kolom di layar >= 720 dp. Lebar kolom bagan = 62% lebar isi.
+    final layout = PageLayout.of(context);
+    final side = layout.sidePadding;
+    final listColumns = layout.contentWidth >= 720 ? 2 : 1;
 
     return Scaffold(
       backgroundColor: AppColors.bgDark,
@@ -474,24 +380,25 @@ class _DetailTurnamenScreenState extends State<DetailTurnamenScreen>
           children: [
             // Baris 1: kartu info
             Padding(
-              padding: EdgeInsets.fromLTRB(layout.sidePadding, 8, layout.sidePadding, 12),
+              padding: EdgeInsets.fromLTRB(side, 8, side, 12),
               child: _HeaderCard(
                 turnamen: t,
                 isPrivate: _isPrivate,
-                selesaiCount: selesaiCount,
-                totalCount: totalCount,
+                selesaiCount: _pertandinganList.where((m) => m.status == 'Selesai').length,
+                totalCount: _pertandinganList.length,
                 onAkhiri: _akhiriTurnamen,
               ),
             ),
             // Baris 2: tab bar
             Padding(
-              padding: EdgeInsets.symmetric(horizontal: layout.sidePadding),
+              padding: EdgeInsets.symmetric(horizontal: side),
               child: _DetailTabBar(
                 controller: _tabController,
-                isKnockout: _isKnockoutFormat,
+                isKnockout: _isKnockout,
                 matchCount: _pertandinganList.length,
                 pesertaCount: _pesertaList.length,
-                showIcons: layout.showTabIcons,
+                // Di layar sempit ikon tab disembunyikan supaya label tidak terpotong.
+                showIcons: layout.screen.width >= 380,
               ),
             ),
             const SizedBox(height: 12),
@@ -500,34 +407,32 @@ class _DetailTurnamenScreenState extends State<DetailTurnamenScreen>
               child: TabBarView(
                 controller: _tabController,
                 children: [
-                  if (_isKnockoutFormat)
+                  if (_isKnockout)
                     _BracketView(
                       matches: _pertandinganList,
                       legCount: t.jumlahLeg,
-                      columnWidth: layout.bracketColumnWidth,
-                      connectorWidth: layout.bracketConnectorWidth,
-                      sidePadding: layout.sidePadding,
+                      chessBestOf: _chessBestOf,
+                      columnWidth: (layout.contentWidth * 0.62).clamp(200.0, 280.0),
+                      connectorWidth: (layout.contentWidth * 0.07).clamp(20.0, 40.0),
+                      sidePadding: side,
                       onTapMatch: _openInputSkor,
                     )
                   else
                     _KlasemenView(
                       klasemen: _calculateKlasemen(),
-                      sidePadding: layout.sidePadding,
+                      isChess: _chessBestOf != null,
+                      sidePadding: side,
                     ),
                   _MatchListView(
                     grouped: _groupedMatches(),
                     isLocked: t.isLocked,
-                    columns: layout.listColumns,
+                    chessBestOf: _chessBestOf,
+                    columns: listColumns,
                     gap: layout.gap,
-                    sidePadding: layout.sidePadding,
+                    sidePadding: side,
                     onTapMatch: _openInputSkor,
                   ),
-                  _PesertaListView(
-                    peserta: _pesertaList,
-                    columns: layout.listColumns,
-                    gap: layout.gap,
-                    sidePadding: layout.sidePadding,
-                  ),
+                  _peserta(listColumns, layout.gap, side),
                 ],
               ),
             ),
@@ -536,44 +441,27 @@ class _DetailTurnamenScreenState extends State<DetailTurnamenScreen>
       ),
     );
   }
-}
 
-// ===================== WIDGET STATELESS: UMUM =====================
+  Widget _peserta(int columns, double gap, double side) {
+    if (_pesertaList.isEmpty) return const _EmptyText('Belum ada peserta terdaftar');
 
-/// Susun widget jadi grid N kolom dibagi rata (Row + Expanded).
-class _ResponsiveGrid extends StatelessWidget {
-  const _ResponsiveGrid({
-    required this.columns,
-    required this.gap,
-    required this.children,
-  });
-
-  final int columns;
-  final double gap;
-  final List<Widget> children;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
+    return ListView(
+      padding: EdgeInsets.fromLTRB(side, 0, side, 20),
       children: [
-        for (int start = 0; start < children.length; start += columns)
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              for (int i = 0; i < columns; i++) ...[
-                if (i > 0) SizedBox(width: gap),
-                Expanded(
-                  child: start + i < children.length
-                      ? children[start + i]
-                      : const SizedBox.shrink(),
-                ),
-              ],
-            ],
-          ),
+        ResponsiveGrid(
+          columns: columns,
+          gap: gap,
+          children: [
+            for (int i = 0; i < _pesertaList.length; i++)
+              _PesertaTile(number: i + 1, nama: _pesertaList[i].namaPeserta),
+          ],
+        ),
       ],
     );
   }
 }
+
+// ===================== WIDGET STATELESS: UMUM =====================
 
 class _EmptyText extends StatelessWidget {
   const _EmptyText(this.text);
@@ -595,47 +483,13 @@ class _EmptyText extends StatelessWidget {
   }
 }
 
-class _ErrorView extends StatelessWidget {
-  const _ErrorView({required this.message, required this.onRetry});
-
-  final String message;
-  final VoidCallback onRetry;
-
-  @override
-  Widget build(BuildContext context) {
-    final width = MediaQuery.sizeOf(context).width;
-
-    return Center(
-      child: SingleChildScrollView(
-        padding: EdgeInsets.all(width * 0.06),
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 420),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                Icons.error_outline_rounded,
-                color: AppColors.error,
-                size: (width * 0.12).clamp(40.0, 56.0),
-              ),
-              const SizedBox(height: 12),
-              Text(
-                message,
-                textAlign: TextAlign.center,
-                style: const TextStyle(color: AppColors.textSecondary),
-              ),
-              const SizedBox(height: 16),
-              ElevatedButton(
-                onPressed: onRetry,
-                style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary),
-                child: const Text('Coba Lagi', style: TextStyle(color: Colors.white)),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
+/// Kotak gelap dengan sudut membulat dan garis tepi tipis.
+BoxDecoration _cardDecoration({double radius = 16, double borderAlpha = 0.06}) {
+  return BoxDecoration(
+    color: AppColors.bgCard,
+    borderRadius: BorderRadius.circular(radius),
+    border: Border.all(color: Colors.white.withValues(alpha: borderAlpha)),
+  );
 }
 
 // ===================== WIDGET STATELESS: HEADER =====================
@@ -655,30 +509,22 @@ class _HeaderCard extends StatelessWidget {
   final int totalCount;
   final VoidCallback onAkhiri;
 
-  static Color statusColor(String status) {
-    switch (status) {
-      case 'Berlangsung':
-        return AppColors.secondary;
-      case 'Selesai':
-        return AppColors.success;
-      default:
-        return const Color(0xFF818CF8);
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final t = turnamen;
     final progress = totalCount > 0 ? selesaiCount / totalCount : 0.0;
-    final dateFormat = DateFormat('dd MMM yyyy, HH:mm');
+    final isComplete = progress == 1.0;
     final width = MediaQuery.sizeOf(context).width;
+    final seri = t.bestOf > 1
+        ? 'Best of ${t.bestOf}'
+        : (t.jumlahLeg == 2 ? '2 Leg Home & Away' : '1 Leg');
 
     return Container(
       width: double.infinity,
       padding: EdgeInsets.all((width * 0.04).clamp(12.0, 20.0)),
       decoration: BoxDecoration(
         gradient: const LinearGradient(
-          colors: [Color(0xFF1E293B), Color(0xFF0F172A)],
+          colors: [AppColors.bgCard, Color(0xFF0F172A)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
@@ -699,8 +545,14 @@ class _HeaderCard extends StatelessWidget {
             spacing: 8,
             runSpacing: 6,
             children: [
-              _StatusPill(status: t.status, color: statusColor(t.status)),
-              _PrivacyPill(isPrivate: isPrivate),
+              ColorBadge(
+                text: t.status,
+                color: statusColor(t.status, fallback: AppColors.primaryLight),
+                dot: true,
+                radius: 20,
+                borderAlpha: 0.4,
+              ),
+              PrivacyBadge(isPrivate: isPrivate),
             ],
           ),
           const SizedBox(height: 10),
@@ -714,8 +566,7 @@ class _HeaderCard extends StatelessWidget {
                 color: AppColors.textSecondary,
               ),
               _TagChip(
-                text: '${t.kuota} Peserta · ${t.formatBracket} '
-                    '(${t.jumlahLeg == 2 ? "2 Leg Home & Away" : "1 Leg"})',
+                text: '${t.kuota} Peserta · ${t.formatBracket} ($seri)',
                 background: AppColors.primary.withValues(alpha: 0.15),
                 color: AppColors.primaryLight,
               ),
@@ -728,13 +579,13 @@ class _HeaderCard extends StatelessWidget {
               const SizedBox(width: 6),
               Expanded(
                 child: Text(
-                  dateFormat.format(t.tanggalMulai),
+                  DateFormat('dd MMM yyyy, HH:mm').format(t.tanggalMulai),
                   style: const TextStyle(color: AppColors.textSecondary, fontSize: 12),
                 ),
               ),
             ],
           ),
-          if (t.deskripsi != null && t.deskripsi!.isNotEmpty) ...[
+          if (t.deskripsi?.isNotEmpty ?? false) ...[
             const SizedBox(height: 6),
             Text(
               t.deskripsi!,
@@ -744,15 +595,51 @@ class _HeaderCard extends StatelessWidget {
             ),
           ],
           const SizedBox(height: 10),
-          _ProgressSection(
-            selesaiCount: selesaiCount,
-            totalCount: totalCount,
-            progress: progress,
+          // Progress turnamen
+          Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  'Progress Turnamen',
+                  style: TextStyle(
+                    color: AppColors.textSecondary,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+              Text(
+                '$selesaiCount / $totalCount Laga (${(progress * 100).toInt()}%)',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(6),
+            child: LinearProgressIndicator(
+              value: progress,
+              minHeight: 6,
+              backgroundColor: Colors.white.withValues(alpha: 0.08),
+              valueColor: AlwaysStoppedAnimation(
+                isComplete ? AppColors.success : AppColors.secondary,
+              ),
+            ),
           ),
           if (t.isLocked) ...[
             const SizedBox(height: 12),
-            const _LockedBanner(),
-          ] else if (progress == 1.0 && totalCount > 0) ...[
+            const ColorBadge(
+              text: 'Turnamen Telah Berakhir — Skor Dikunci',
+              color: AppColors.success,
+              icon: Icons.lock_rounded,
+              radius: 10,
+              padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            ),
+          ] else if (isComplete && totalCount > 0) ...[
             const SizedBox(height: 12),
             SizedBox(
               width: double.infinity,
@@ -772,71 +659,6 @@ class _HeaderCard extends StatelessWidget {
               ),
             ),
           ],
-        ],
-      ),
-    );
-  }
-}
-
-class _StatusPill extends StatelessWidget {
-  const _StatusPill({required this.status, required this.color});
-
-  final String status;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.15),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: color.withValues(alpha: 0.4)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 7,
-            height: 7,
-            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-          ),
-          const SizedBox(width: 6),
-          Text(
-            status,
-            style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.bold),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _PrivacyPill extends StatelessWidget {
-  const _PrivacyPill({required this.isPrivate});
-
-  final bool isPrivate;
-
-  @override
-  Widget build(BuildContext context) {
-    final color = isPrivate ? const Color(0xFF10B981) : AppColors.secondary;
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.15),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: color.withValues(alpha: 0.4)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(isPrivate ? Icons.lock_rounded : Icons.public_rounded, size: 11, color: color),
-          const SizedBox(width: 4),
-          Text(
-            isPrivate ? 'Privat (Lokal HP)' : 'Publik',
-            style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.bold),
-          ),
         ],
       ),
     );
@@ -863,86 +685,6 @@ class _TagChip extends StatelessWidget {
   }
 }
 
-class _ProgressSection extends StatelessWidget {
-  const _ProgressSection({
-    required this.selesaiCount,
-    required this.totalCount,
-    required this.progress,
-  });
-
-  final int selesaiCount;
-  final int totalCount;
-  final double progress;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            const Expanded(
-              child: Text(
-                'Progress Turnamen',
-                style: TextStyle(
-                  color: AppColors.textSecondary,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ),
-            Text(
-              '$selesaiCount / $totalCount Laga (${(progress * 100).toInt()}%)',
-              style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
-            ),
-          ],
-        ),
-        const SizedBox(height: 6),
-        ClipRRect(
-          borderRadius: BorderRadius.circular(6),
-          child: LinearProgressIndicator(
-            value: progress,
-            minHeight: 6,
-            backgroundColor: Colors.white.withValues(alpha: 0.08),
-            valueColor: AlwaysStoppedAnimation<Color>(
-              progress == 1.0 ? AppColors.success : AppColors.secondary,
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _LockedBanner extends StatelessWidget {
-  const _LockedBanner();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: AppColors.success.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: AppColors.success.withValues(alpha: 0.3)),
-      ),
-      child: const Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.lock_rounded, size: 14, color: AppColors.success),
-          SizedBox(width: 6),
-          Flexible(
-            child: Text(
-              'Turnamen Telah Berakhir — Skor Dikunci',
-              style: TextStyle(color: AppColors.success, fontSize: 11, fontWeight: FontWeight.bold),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 // ===================== WIDGET STATELESS: TAB BAR =====================
 
 class _DetailTabBar extends StatelessWidget {
@@ -960,21 +702,29 @@ class _DetailTabBar extends StatelessWidget {
   final int pesertaCount;
   final bool showIcons;
 
+  Tab _tab(IconData icon, String text) {
+    return Tab(
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          if (showIcons) ...[Icon(icon, size: 16), const SizedBox(width: 6)],
+          Flexible(child: Text(text, overflow: TextOverflow.ellipsis)),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Container(
       height: 44,
-      decoration: BoxDecoration(
-        color: const Color(0xFF1E293B),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.05)),
-      ),
+      decoration: _cardDecoration(radius: 14, borderAlpha: 0.05),
       child: TabBar(
         controller: controller,
         indicatorSize: TabBarIndicatorSize.tab,
         dividerColor: Colors.transparent,
         indicator: BoxDecoration(
-          gradient: const LinearGradient(colors: [AppColors.primary, Color(0xFF4F46E5)]),
+          gradient: _primaryGradient,
           borderRadius: BorderRadius.circular(12),
           boxShadow: [
             BoxShadow(
@@ -988,45 +738,11 @@ class _DetailTabBar extends StatelessWidget {
         unselectedLabelColor: AppColors.textSecondary,
         labelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
         tabs: [
-          _TabLabel(
-            icon: isKnockout ? Icons.account_tree_rounded : Icons.leaderboard_rounded,
-            text: isKnockout ? 'Bagan' : 'Klasemen',
-            showIcon: showIcons,
-          ),
-          _TabLabel(
-            icon: Icons.sports_esports_rounded,
-            text: 'Laga ($matchCount)',
-            showIcon: showIcons,
-          ),
-          _TabLabel(
-            icon: Icons.groups_rounded,
-            text: 'Peserta ($pesertaCount)',
-            showIcon: showIcons,
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _TabLabel extends StatelessWidget {
-  const _TabLabel({required this.icon, required this.text, required this.showIcon});
-
-  final IconData icon;
-  final String text;
-  final bool showIcon;
-
-  @override
-  Widget build(BuildContext context) {
-    return Tab(
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          if (showIcon) ...[
-            Icon(icon, size: 16),
-            const SizedBox(width: 6),
-          ],
-          Flexible(child: Text(text, overflow: TextOverflow.ellipsis)),
+          isKnockout
+              ? _tab(Icons.account_tree_rounded, 'Bagan')
+              : _tab(Icons.leaderboard_rounded, 'Klasemen'),
+          _tab(Icons.sports_esports_rounded, 'Laga ($matchCount)'),
+          _tab(Icons.groups_rounded, 'Peserta ($pesertaCount)'),
         ],
       ),
     );
@@ -1039,6 +755,7 @@ class _BracketView extends StatelessWidget {
   const _BracketView({
     required this.matches,
     required this.legCount,
+    required this.chessBestOf,
     required this.columnWidth,
     required this.connectorWidth,
     required this.sidePadding,
@@ -1047,6 +764,7 @@ class _BracketView extends StatelessWidget {
 
   final List<PertandinganModel> matches;
   final int legCount;
+  final int? chessBestOf;
   final double columnWidth;
   final double connectorWidth;
   final double sidePadding;
@@ -1058,21 +776,23 @@ class _BracketView extends StatelessWidget {
 
     final matchesByRound = <String, List<PertandinganModel>>{};
     for (final match in [...matches]..sort((a, b) => a.urutan.compareTo(b.urutan))) {
-      final roundName = match.babak.replaceFirst(RegExp(r'^Leg [12] - '), '');
-      matchesByRound.putIfAbsent(roundName, () => []).add(match);
+      matchesByRound.putIfAbsent(_roundName(match.babak), () => []).add(match);
     }
-    final thirdPlaceMatches = matchesByRound.remove('Perebutan Juara 3') ?? [];
-    final roundEntries = matchesByRound.entries.toList()
+    // Juara 3 ditampilkan di bawah kolom Semifinal; Final selalu paling kanan.
+    final thirdPlace = matchesByRound.remove('Perebutan Juara 3') ?? [];
+    final rounds = matchesByRound.entries.toList()
       ..sort((a, b) {
         if (a.key == 'Final') return 1;
         if (b.key == 'Final') return -1;
         return a.value.first.urutan.compareTo(b.value.first.urutan);
       });
 
+    // Satu kotak pertemuan = [legCount] laga berurutan.
     List<Widget> ties(List<PertandinganModel> list) => [
           for (var i = 0; i < list.length; i += legCount)
             _BracketTie(
               legs: list.skip(i).take(legCount).toList(),
+              chessBestOf: chessBestOf,
               onTap: onTapMatch,
             ),
         ];
@@ -1084,24 +804,22 @@ class _BracketView extends StatelessWidget {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            for (final roundEntry in roundEntries) ...[
-              // Lebar kolom babak dari MediaQuery, bukan 236 tetap
+            for (final round in rounds) ...[
               SizedBox(
                 width: columnWidth,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _RoundTitle(roundEntry.key),
-                    ...ties(roundEntry.value),
-                    if (roundEntry.key.contains('Semifinal') &&
-                        thirdPlaceMatches.isNotEmpty) ...[
+                    _RoundTitle(round.key),
+                    ...ties(round.value),
+                    if (round.key.contains('Semifinal') && thirdPlace.isNotEmpty) ...[
                       const _RoundTitle('Perebutan Juara 3', topPadding: 4),
-                      ...ties(thirdPlaceMatches),
+                      ...ties(thirdPlace),
                     ],
                   ],
                 ),
               ),
-              if (roundEntry.key != roundEntries.last.key)
+              if (round.key != rounds.last.key)
                 SizedBox(
                   width: connectorWidth,
                   child: const Padding(
@@ -1142,9 +860,10 @@ class _RoundTitle extends StatelessWidget {
 }
 
 class _BracketTie extends StatelessWidget {
-  const _BracketTie({required this.legs, required this.onTap});
+  const _BracketTie({required this.legs, required this.chessBestOf, required this.onTap});
 
   final List<PertandinganModel> legs;
+  final int? chessBestOf;
   final ValueChanged<PertandinganModel> onTap;
 
   @override
@@ -1152,14 +871,11 @@ class _BracketTie extends StatelessWidget {
     final firstLeg = legs.first;
     final homeId = firstLeg.idPeserta1;
     final awayId = firstLeg.idPeserta2;
-    final homeName = firstLeg.displayNama1 ?? 'Menunggu pemenang';
-    final awayName = firstLeg.displayNama2 ?? 'Menunggu pemenang';
 
+    // Skor agregat semua leg, dilihat dari sisi tim kandang leg pertama.
     var homeScore = 0;
     var awayScore = 0;
-    var allLegsFinished = true;
     for (final leg in legs) {
-      allLegsFinished &= leg.status == 'Selesai';
       if (homeId != null && leg.idPeserta1 == homeId) {
         homeScore += leg.skorPeserta1;
         awayScore += leg.skorPeserta2;
@@ -1169,21 +885,29 @@ class _BracketTie extends StatelessWidget {
       }
     }
 
-    var homeWon = allLegsFinished && homeScore > awayScore;
-    var awayWon = allLegsFinished && awayScore > homeScore;
-    if (allLegsFinished && homeScore == awayScore) {
-      for (final leg in legs) {
-        final penalty1 = leg.skorPenaltiPeserta1;
-        final penalty2 = leg.skorPenaltiPeserta2;
-        if (penalty1 == null || penalty2 == null) continue;
-        final legHomePenalty = leg.idPeserta1 == homeId ? penalty1 : penalty2;
-        final legAwayPenalty = leg.idPeserta1 == homeId ? penalty2 : penalty1;
-        homeWon = legHomePenalty > legAwayPenalty;
-        awayWon = legAwayPenalty > legHomePenalty;
-        break;
+    final allFinished = legs.every((leg) => leg.status == 'Selesai');
+    var homeWon = allFinished && homeScore > awayScore;
+    var awayWon = allFinished && awayScore > homeScore;
+    // Agregat seri: pemenang dari adu penalti.
+    if (allFinished && homeScore == awayScore) {
+      final penaltyLeg = legs
+          .where((leg) => leg.skorPenaltiPeserta1 != null && leg.skorPenaltiPeserta2 != null)
+          .firstOrNull;
+      if (penaltyLeg != null) {
+        final homeIsP1 = penaltyLeg.idPeserta1 == homeId;
+        final homePenalty = homeIsP1 ? penaltyLeg.skorPenaltiPeserta1! : penaltyLeg.skorPenaltiPeserta2!;
+        final awayPenalty = homeIsP1 ? penaltyLeg.skorPenaltiPeserta2! : penaltyLeg.skorPenaltiPeserta1!;
+        homeWon = homePenalty > awayPenalty;
+        awayWon = awayPenalty > homePenalty;
       }
     }
 
+    // Catur seri cuma 1 laga per pertemuan: tampilkan poinnya.
+    final (homeText, awayText) = chessBestOf != null
+        ? _scoreTexts(firstLeg, chessBestOf)
+        : ('$homeScore', '$awayScore');
+
+    // Ketukan membuka leg pertama yang belum selesai.
     final editableLeg = legs.firstWhere(
       (leg) => leg.status != 'Selesai',
       orElse: () => legs.last,
@@ -1191,11 +915,7 @@ class _BracketTie extends StatelessWidget {
 
     return Container(
       margin: const EdgeInsets.only(bottom: 14),
-      decoration: BoxDecoration(
-        color: const Color(0xFF1E293B),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
-      ),
+      decoration: _cardDecoration(radius: 12, borderAlpha: 0.08),
       child: Material(
         color: Colors.transparent,
         child: InkWell(
@@ -1205,9 +925,19 @@ class _BracketTie extends StatelessWidget {
             padding: const EdgeInsets.all(10),
             child: Column(
               children: [
-                _BracketParticipant(name: homeName, score: homeScore, isWinner: homeWon),
+                _ScoreLine(
+                  name: firstLeg.displayNama1 ?? 'Menunggu pemenang',
+                  score: homeText,
+                  isWinner: homeWon,
+                  compact: true,
+                ),
                 const Divider(color: Colors.white10, height: 16),
-                _BracketParticipant(name: awayName, score: awayScore, isWinner: awayWon),
+                _ScoreLine(
+                  name: firstLeg.displayNama2 ?? 'Menunggu pemenang',
+                  score: awayText,
+                  isWinner: awayWon,
+                  compact: true,
+                ),
                 if (legs.length > 1) ...[
                   const SizedBox(height: 8),
                   Text(
@@ -1233,21 +963,40 @@ class _BracketTie extends StatelessWidget {
   }
 }
 
-class _BracketParticipant extends StatelessWidget {
-  const _BracketParticipant({required this.name, required this.score, required this.isWinner});
+/// Satu baris peserta + skor. [compact] untuk kotak bagan, normal untuk
+/// kartu laga (skor di dalam kotak).
+class _ScoreLine extends StatelessWidget {
+  const _ScoreLine({
+    required this.name,
+    required this.score,
+    required this.isWinner,
+    this.isFinished = false,
+    this.compact = false,
+  });
 
   final String name;
-  final int score;
+  final String score;
   final bool isWinner;
+  final bool isFinished;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
+    final scoreText = Text(
+      score,
+      style: TextStyle(
+        color: isWinner ? Colors.white : AppColors.textSecondary,
+        fontSize: 13,
+        fontWeight: FontWeight.bold,
+      ),
+    );
+
     return Row(
       children: [
         if (isWinner)
-          const Padding(
-            padding: EdgeInsets.only(right: 5),
-            child: Icon(Icons.emoji_events_rounded, color: Color(0xFFFFD700), size: 14),
+          Padding(
+            padding: EdgeInsets.only(right: compact ? 5 : 6),
+            child: Icon(Icons.emoji_events_rounded, color: _gold, size: compact ? 14 : 16),
           ),
         Expanded(
           child: Text(
@@ -1255,21 +1004,31 @@ class _BracketParticipant extends StatelessWidget {
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
-              color: isWinner ? const Color(0xFFFFD700) : AppColors.textPrimary,
-              fontSize: 12,
+              color: isWinner
+                  ? _gold
+                  : (isFinished ? AppColors.textSecondary : AppColors.textPrimary),
+              fontSize: compact ? 12 : 13,
               fontWeight: isWinner ? FontWeight.bold : FontWeight.w600,
             ),
           ),
         ),
         const SizedBox(width: 8),
-        Text(
-          '$score',
-          style: TextStyle(
-            color: isWinner ? Colors.white : AppColors.textSecondary,
-            fontSize: 13,
-            fontWeight: FontWeight.bold,
+        if (compact)
+          scoreText
+        else
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            decoration: BoxDecoration(
+              color: isWinner
+                  ? AppColors.primary.withValues(alpha: 0.35)
+                  : const Color(0xFF0F172A),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: isWinner ? AppColors.primary : Colors.white.withValues(alpha: 0.05),
+              ),
+            ),
+            child: scoreText,
           ),
-        ),
       ],
     );
   }
@@ -1277,42 +1036,15 @@ class _BracketParticipant extends StatelessWidget {
 
 // ===================== WIDGET STATELESS: KLASEMEN =====================
 
-/// Lebar kolom tabel klasemen dihitung dari lebar yang tersedia.
-/// Di layar < 360 dp kolom GF & GA disembunyikan supaya nama tetap terbaca.
-class _KlasemenCols {
-  const _KlasemenCols({
-    required this.rank,
-    required this.stat,
-    required this.goal,
-    required this.gd,
-    required this.pts,
-    required this.showGoals,
+class _KlasemenView extends StatelessWidget {
+  const _KlasemenView({
+    required this.klasemen,
+    required this.isChess,
+    required this.sidePadding,
   });
 
-  factory _KlasemenCols.fromWidth(double width) {
-    final unit = (width * 0.06).clamp(20.0, 36.0);
-    return _KlasemenCols(
-      rank: unit * 1.2,
-      stat: unit,
-      goal: unit * 1.1,
-      gd: unit * 1.3,
-      pts: unit * 1.5,
-      showGoals: width >= 360,
-    );
-  }
-
-  final double rank;
-  final double stat;
-  final double goal;
-  final double gd;
-  final double pts;
-  final bool showGoals;
-}
-
-class _KlasemenView extends StatelessWidget {
-  const _KlasemenView({required this.klasemen, required this.sidePadding});
-
   final List<KlasemenItem> klasemen;
+  final bool isChess;
   final double sidePadding;
 
   @override
@@ -1322,73 +1054,43 @@ class _KlasemenView extends StatelessWidget {
     return ListView(
       padding: EdgeInsets.fromLTRB(sidePadding, 0, sidePadding, 24),
       children: [
-        _KlasemenTable(klasemen: klasemen),
+        // LayoutBuilder: lebar kolom tabel dihitung dari lebar yang tersedia.
+        LayoutBuilder(
+          builder: (context, constraints) => _KlasemenTable(
+            klasemen: klasemen,
+            isChess: isChess,
+            unit: (constraints.maxWidth * 0.06).clamp(20.0, 36.0),
+            // Layar < 360 dp: kolom GF & GA disembunyikan. Catur tanpa gol.
+            showGoals: !isChess && constraints.maxWidth >= 360,
+          ),
+        ),
         const SizedBox(height: 14),
-        const _KlasemenLegend(),
+        _KlasemenLegend(isChess: isChess),
       ],
     );
   }
 }
 
 class _KlasemenTable extends StatelessWidget {
-  const _KlasemenTable({required this.klasemen});
+  const _KlasemenTable({
+    required this.klasemen,
+    required this.isChess,
+    required this.unit,
+    required this.showGoals,
+  });
 
   final List<KlasemenItem> klasemen;
 
-  @override
-  Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final cols = _KlasemenCols.fromWidth(constraints.maxWidth);
+  /// Catur: kolom GF, GA, GD disembunyikan; PTS berupa poin pecahan (1½).
+  final bool isChess;
 
-        return Container(
-          decoration: BoxDecoration(
-            color: const Color(0xFF182234),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.2),
-                blurRadius: 10,
-                offset: const Offset(0, 4),
-              ),
-            ],
-          ),
-          child: Column(
-            children: [
-              _KlasemenHeader(cols: cols),
-              for (int i = 0; i < klasemen.length; i++)
-                _KlasemenRow(
-                  item: klasemen[i],
-                  rank: i + 1,
-                  isLast: i == klasemen.length - 1,
-                  cols: cols,
-                ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-}
+  /// Lebar dasar kolom angka.
+  final double unit;
+  final bool showGoals;
 
-class _Cell extends StatelessWidget {
-  const _Cell({
-    required this.text,
-    required this.width,
-    this.color = AppColors.textSecondary,
-    this.bold = true,
-  });
-
-  final String text;
-  final double width;
-  final Color color;
-  final bool bold;
-
-  @override
-  Widget build(BuildContext context) {
+  Widget _cell(String text, double widthFactor, {Color color = AppColors.textSecondary, bool bold = true}) {
     return SizedBox(
-      width: width,
+      width: unit * widthFactor,
       child: Text(
         text,
         textAlign: TextAlign.center,
@@ -1400,17 +1102,16 @@ class _Cell extends StatelessWidget {
       ),
     );
   }
-}
 
-class _KlasemenHeader extends StatelessWidget {
-  const _KlasemenHeader({required this.cols});
+  String _num(int value, {bool signed = false}) {
+    final text = isChess ? formatHalfPoints(value.abs()) : '${value.abs()}';
+    if (value < 0) return '-$text';
+    return signed && value > 0 ? '+$text' : text;
+  }
 
-  final _KlasemenCols cols;
-
-  @override
-  Widget build(BuildContext context) {
+  Widget _header() {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+      padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
         color: const Color(0xFF0F172A),
         borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
@@ -1419,7 +1120,7 @@ class _KlasemenHeader extends StatelessWidget {
       child: Row(
         children: [
           SizedBox(
-            width: cols.rank,
+            width: unit * 1.2,
             child: const Text(
               '#',
               style: TextStyle(
@@ -1441,50 +1142,29 @@ class _KlasemenHeader extends StatelessWidget {
               ),
             ),
           ),
-          _Cell(text: 'M', width: cols.stat),
-          _Cell(text: 'W', width: cols.stat, color: AppColors.success),
-          _Cell(text: 'D', width: cols.stat, color: AppColors.secondary),
-          _Cell(text: 'L', width: cols.stat, color: AppColors.error),
-          if (cols.showGoals) ...[
-            _Cell(text: 'GF', width: cols.goal),
-            _Cell(text: 'GA', width: cols.goal),
-          ],
-          _Cell(text: 'GD', width: cols.gd),
-          _Cell(text: 'PTS', width: cols.pts, color: Colors.white),
+          _cell('M', 1),
+          _cell('W', 1, color: AppColors.success),
+          _cell('D', 1, color: AppColors.secondary),
+          _cell('L', 1, color: AppColors.error),
+          if (showGoals) ...[_cell('GF', 1.1), _cell('GA', 1.1)],
+          if (!isChess) _cell('GD', 1.3),
+          _cell('PTS', 1.5, color: Colors.white),
         ],
       ),
     );
   }
-}
 
-class _KlasemenRow extends StatelessWidget {
-  const _KlasemenRow({
-    required this.item,
-    required this.rank,
-    required this.isLast,
-    required this.cols,
-  });
-
-  final KlasemenItem item;
-  final int rank;
-  final bool isLast;
-  final _KlasemenCols cols;
-
-  @override
-  Widget build(BuildContext context) {
-    Color? rowBgColor;
-    if (rank == 1) rowBgColor = const Color(0xFFFFD700).withValues(alpha: 0.05);
-    if (rank == 2) rowBgColor = const Color(0xFFC0C0C0).withValues(alpha: 0.03);
-    if (rank == 3) rowBgColor = const Color(0xFFCD7F32).withValues(alpha: 0.03);
-
+  Widget _row(KlasemenItem item, int rank) {
+    final isLast = rank == klasemen.length;
+    const podiumColors = {1: Color(0x0DFFD700), 2: Color(0x08C0C0C0), 3: Color(0x08CD7F32)};
     final gdColor = item.sg > 0
         ? AppColors.success
         : (item.sg < 0 ? AppColors.error : AppColors.textSecondary);
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+      padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
-        color: rowBgColor ??
+        color: podiumColors[rank] ??
             (rank.isOdd ? Colors.white.withValues(alpha: 0.015) : Colors.transparent),
         borderRadius: isLast ? const BorderRadius.vertical(bottom: Radius.circular(16)) : null,
         border: isLast
@@ -1493,45 +1173,39 @@ class _KlasemenRow extends StatelessWidget {
       ),
       child: Row(
         children: [
-          SizedBox(width: cols.rank, child: _RankBadge(rank: rank)),
+          SizedBox(width: unit * 1.2, child: _RankBadge(rank: rank)),
           Expanded(
             child: Text(
               item.namaPeserta,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                color: rank == 1 ? const Color(0xFFFFD700) : AppColors.textPrimary,
+                color: rank == 1 ? _gold : AppColors.textPrimary,
                 fontWeight: rank <= 3 ? FontWeight.bold : FontWeight.w600,
                 fontSize: 12,
               ),
             ),
           ),
-          _Cell(text: '${item.main}', width: cols.stat, color: AppColors.textPrimary, bold: false),
-          _Cell(text: '${item.menang}', width: cols.stat, color: AppColors.success),
-          _Cell(text: '${item.seri}', width: cols.stat, color: AppColors.secondary),
-          _Cell(text: '${item.kalah}', width: cols.stat, color: AppColors.error),
-          if (cols.showGoals) ...[
-            _Cell(text: '${item.gm}', width: cols.goal, color: AppColors.textPrimary, bold: false),
-            _Cell(text: '${item.gk}', width: cols.goal, color: AppColors.textMuted, bold: false),
+          _cell('${item.main}', 1, color: AppColors.textPrimary, bold: false),
+          _cell('${item.menang}', 1, color: AppColors.success),
+          _cell('${item.seri}', 1, color: AppColors.secondary),
+          _cell('${item.kalah}', 1, color: AppColors.error),
+          if (showGoals) ...[
+            _cell(_num(item.gm), 1.1, color: AppColors.textPrimary, bold: false),
+            _cell(_num(item.gk), 1.1, color: AppColors.textMuted, bold: false),
           ],
-          _Cell(
-            text: item.sg > 0 ? '+${item.sg}' : '${item.sg}',
-            width: cols.gd,
-            color: gdColor,
-          ),
+          if (!isChess) _cell(_num(item.sg, signed: true), 1.3, color: gdColor),
           SizedBox(
-            width: cols.pts,
+            width: unit * 1.5,
             child: Container(
               padding: const EdgeInsets.symmetric(vertical: 2),
               decoration: BoxDecoration(
-                gradient: rank == 1
-                    ? const LinearGradient(colors: [Color(0xFF6366F1), Color(0xFF4F46E5)])
-                    : null,
+                gradient: rank == 1 ? _primaryGradient : null,
                 color: rank != 1 ? AppColors.primary.withValues(alpha: 0.2) : null,
                 borderRadius: BorderRadius.circular(5),
               ),
               child: Text(
-                '${item.poin}',
+                _num(item.poin),
                 textAlign: TextAlign.center,
                 style: const TextStyle(
                   color: Colors.white,
@@ -1541,6 +1215,30 @@ class _KlasemenRow extends StatelessWidget {
               ),
             ),
           ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFF182234),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.2),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          _header(),
+          for (int i = 0; i < klasemen.length; i++) _row(klasemen[i], i + 1),
         ],
       ),
     );
@@ -1555,12 +1253,12 @@ class _RankBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     const gradients = {
-      1: [Color(0xFFFFD700), Color(0xFFF59E0B)],
+      1: [_gold, Color(0xFFF59E0B)],
       2: [Color(0xFFE2E8F0), Color(0xFF94A3B8)],
       3: [Color(0xFFF97316), Color(0xFFB45309)],
     };
-
     final colors = gradients[rank];
+
     if (colors == null) {
       return Text(
         '$rank',
@@ -1571,17 +1269,13 @@ class _RankBadge extends StatelessWidget {
         ),
       );
     }
-
     return Align(
       alignment: Alignment.centerLeft,
       child: Container(
         width: 20,
         height: 20,
         alignment: Alignment.center,
-        decoration: BoxDecoration(
-          gradient: LinearGradient(colors: colors),
-          shape: BoxShape.circle,
-        ),
+        decoration: BoxDecoration(gradient: LinearGradient(colors: colors), shape: BoxShape.circle),
         child: Text(
           '$rank',
           style: TextStyle(
@@ -1596,25 +1290,35 @@ class _RankBadge extends StatelessWidget {
 }
 
 class _KlasemenLegend extends StatelessWidget {
-  const _KlasemenLegend();
+  const _KlasemenLegend({required this.isChess});
+
+  final bool isChess;
 
   @override
   Widget build(BuildContext context) {
-    const items = [
-      ('• M = Main', AppColors.textSecondary),
-      ('• W = Menang (3 Poin)', AppColors.success),
-      ('• D = Seri (1 Poin)', AppColors.secondary),
-      ('• L = Kalah (0 Poin)', AppColors.error),
-      ('• GF = Gol Masuk', AppColors.textSecondary),
-      ('• GA = Gol Kebobolan', AppColors.textSecondary),
-      ('• GD = Selisih Gol (GF - GA)', AppColors.textSecondary),
-      ('• PTS = Total Poin', AppColors.primaryLight),
-    ];
+    final items = isChess
+        ? const [
+            ('• M = Game Dimainkan', AppColors.textSecondary),
+            ('• W = Menang (1 Poin)', AppColors.success),
+            ('• D = Remis (½ Poin)', AppColors.secondary),
+            ('• L = Kalah (0 Poin)', AppColors.error),
+            ('• PTS = Total Poin', AppColors.primaryLight),
+          ]
+        : const [
+            ('• M = Main', AppColors.textSecondary),
+            ('• W = Menang (3 Poin)', AppColors.success),
+            ('• D = Seri (1 Poin)', AppColors.secondary),
+            ('• L = Kalah (0 Poin)', AppColors.error),
+            ('• GF = Gol Masuk', AppColors.textSecondary),
+            ('• GA = Gol Kebobolan', AppColors.textSecondary),
+            ('• GD = Selisih Gol (GF - GA)', AppColors.textSecondary),
+            ('• PTS = Total Poin', AppColors.primaryLight),
+          ];
 
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: const Color(0xFF1E293B).withValues(alpha: 0.6),
+        color: AppColors.bgCard.withValues(alpha: 0.6),
         borderRadius: BorderRadius.circular(14),
         border: Border.all(color: Colors.white.withValues(alpha: 0.05)),
       ),
@@ -1658,6 +1362,7 @@ class _MatchListView extends StatelessWidget {
   const _MatchListView({
     required this.grouped,
     required this.isLocked,
+    required this.chessBestOf,
     required this.columns,
     required this.gap,
     required this.sidePadding,
@@ -1666,6 +1371,7 @@ class _MatchListView extends StatelessWidget {
 
   final Map<String, List<PertandinganModel>> grouped;
   final bool isLocked;
+  final int? chessBestOf;
   final int columns;
   final double gap;
   final double sidePadding;
@@ -1687,12 +1393,17 @@ class _MatchListView extends StatelessWidget {
           children: [
             _RoundHeader(title: round.key, count: round.value.length),
             // Kartu laga: 1 kolom di HP, 2 kolom di layar lebar
-            _ResponsiveGrid(
+            ResponsiveGrid(
               columns: columns,
               gap: gap,
               children: [
                 for (final m in round.value)
-                  _MatchCard(match: m, isLocked: isLocked, onTap: () => onTapMatch(m)),
+                  _MatchCard(
+                    match: m,
+                    isLocked: isLocked,
+                    chessBestOf: chessBestOf,
+                    onTap: () => onTapMatch(m),
+                  ),
               ],
             ),
           ],
@@ -1734,10 +1445,7 @@ class _RoundHeader extends StatelessWidget {
               ),
             ),
           ),
-          Text(
-            '$count Laga',
-            style: const TextStyle(color: AppColors.textMuted, fontSize: 11),
-          ),
+          Text('$count Laga', style: const TextStyle(color: AppColors.textMuted, fontSize: 11)),
         ],
       ),
     );
@@ -1745,12 +1453,19 @@ class _RoundHeader extends StatelessWidget {
 }
 
 class _MatchCard extends StatelessWidget {
-  const _MatchCard({required this.match, required this.isLocked, required this.onTap});
+  const _MatchCard({
+    required this.match,
+    required this.isLocked,
+    required this.chessBestOf,
+    required this.onTap,
+  });
 
   final PertandinganModel match;
   final bool isLocked;
+  final int? chessBestOf;
   final VoidCallback onTap;
 
+  /// Menang kalau skor lebih tinggi, atau seri tapi menang adu penalti.
   bool _wins(int own, int other, int? ownPen, int? otherPen) {
     if (match.status != 'Selesai') return false;
     if (own > other) return true;
@@ -1759,28 +1474,25 @@ class _MatchCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isFinished = match.status == 'Selesai';
-    final isP1Winner = _wins(match.skorPeserta1, match.skorPeserta2,
-        match.skorPenaltiPeserta1, match.skorPenaltiPeserta2);
-    final isP2Winner = _wins(match.skorPeserta2, match.skorPeserta1,
-        match.skorPenaltiPeserta2, match.skorPenaltiPeserta1);
-
-    Color badgeColor = AppColors.textMuted;
-    if (match.status == 'Berlangsung') badgeColor = AppColors.secondary;
-    if (match.status == 'Selesai') badgeColor = AppColors.success;
+    final m = match;
+    final isFinished = m.status == 'Selesai';
+    final (score1, score2) = _scoreTexts(m, chessBestOf);
+    final badgeColor = statusColor(m.status, fallback: AppColors.textMuted);
+    final Color borderColor;
+    if (isLocked) {
+      borderColor = Colors.white.withValues(alpha: 0.04);
+    } else if (isFinished) {
+      borderColor = AppColors.success.withValues(alpha: 0.2);
+    } else {
+      borderColor = Colors.white.withValues(alpha: 0.06);
+    }
 
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       decoration: BoxDecoration(
-        color: const Color(0xFF1E293B),
+        color: AppColors.bgCard,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: isLocked
-              ? Colors.white.withValues(alpha: 0.04)
-              : isFinished
-                  ? AppColors.success.withValues(alpha: 0.2)
-                  : Colors.white.withValues(alpha: 0.06),
-        ),
+        border: Border.all(color: borderColor),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.15),
@@ -1802,7 +1514,7 @@ class _MatchCard extends StatelessWidget {
                   children: [
                     Expanded(
                       child: Text(
-                        'Laga #${match.urutan}',
+                        'Laga #${m.urutan}',
                         style: const TextStyle(
                           color: AppColors.textMuted,
                           fontSize: 11,
@@ -1817,7 +1529,7 @@ class _MatchCard extends StatelessWidget {
                         borderRadius: BorderRadius.circular(6),
                       ),
                       child: Text(
-                        match.status,
+                        m.status,
                         style: TextStyle(color: badgeColor, fontSize: 10, fontWeight: FontWeight.bold),
                       ),
                     ),
@@ -1830,26 +1542,28 @@ class _MatchCard extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: 10),
-                _ParticipantScoreRow(
-                  name: match.displayNama1 ?? 'TBD',
-                  score: match.skorPeserta1,
-                  isWinner: isP1Winner,
+                _ScoreLine(
+                  name: m.displayNama1 ?? 'TBD',
+                  score: score1,
+                  isWinner: _wins(m.skorPeserta1, m.skorPeserta2,
+                      m.skorPenaltiPeserta1, m.skorPenaltiPeserta2),
                   isFinished: isFinished,
                 ),
                 const Padding(
                   padding: EdgeInsets.symmetric(vertical: 6),
                   child: Divider(color: Colors.white10, height: 1),
                 ),
-                _ParticipantScoreRow(
-                  name: match.displayNama2 ?? 'TBD',
-                  score: match.skorPeserta2,
-                  isWinner: isP2Winner,
+                _ScoreLine(
+                  name: m.displayNama2 ?? 'TBD',
+                  score: score2,
+                  isWinner: _wins(m.skorPeserta2, m.skorPeserta1,
+                      m.skorPenaltiPeserta2, m.skorPenaltiPeserta1),
                   isFinished: isFinished,
                 ),
-                if (match.skorPenaltiPeserta1 != null && match.skorPenaltiPeserta2 != null) ...[
+                if (m.skorPenaltiPeserta1 != null && m.skorPenaltiPeserta2 != null) ...[
                   const SizedBox(height: 8),
                   Text(
-                    'Adu penalti ${match.skorPenaltiPeserta1}-${match.skorPenaltiPeserta2}',
+                    'Adu penalti ${m.skorPenaltiPeserta1}-${m.skorPenaltiPeserta2}',
                     style: const TextStyle(
                       color: AppColors.warning,
                       fontSize: 11,
@@ -1866,99 +1580,7 @@ class _MatchCard extends StatelessWidget {
   }
 }
 
-class _ParticipantScoreRow extends StatelessWidget {
-  const _ParticipantScoreRow({
-    required this.name,
-    required this.score,
-    required this.isWinner,
-    required this.isFinished,
-  });
-
-  final String name;
-  final int score;
-  final bool isWinner;
-  final bool isFinished;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        if (isWinner)
-          const Padding(
-            padding: EdgeInsets.only(right: 6),
-            child: Icon(Icons.emoji_events_rounded, color: Color(0xFFFFD700), size: 16),
-          ),
-        Expanded(
-          child: Text(
-            name,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              color: isWinner
-                  ? const Color(0xFFFFD700)
-                  : (isFinished ? AppColors.textSecondary : AppColors.textPrimary),
-              fontSize: 13,
-              fontWeight: isWinner ? FontWeight.bold : FontWeight.w600,
-            ),
-          ),
-        ),
-        const SizedBox(width: 8),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-          decoration: BoxDecoration(
-            color: isWinner ? AppColors.primary.withValues(alpha: 0.35) : const Color(0xFF0F172A),
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(
-              color: isWinner ? AppColors.primary : Colors.white.withValues(alpha: 0.05),
-            ),
-          ),
-          child: Text(
-            '$score',
-            style: TextStyle(
-              color: isWinner ? Colors.white : AppColors.textSecondary,
-              fontWeight: FontWeight.bold,
-              fontSize: 13,
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
 // ===================== WIDGET STATELESS: PESERTA =====================
-
-class _PesertaListView extends StatelessWidget {
-  const _PesertaListView({
-    required this.peserta,
-    required this.columns,
-    required this.gap,
-    required this.sidePadding,
-  });
-
-  final List<PesertaModel> peserta;
-  final int columns;
-  final double gap;
-  final double sidePadding;
-
-  @override
-  Widget build(BuildContext context) {
-    if (peserta.isEmpty) return const _EmptyText('Belum ada peserta terdaftar');
-
-    return ListView(
-      padding: EdgeInsets.fromLTRB(sidePadding, 0, sidePadding, 20),
-      children: [
-        _ResponsiveGrid(
-          columns: columns,
-          gap: gap,
-          children: [
-            for (int i = 0; i < peserta.length; i++)
-              _PesertaTile(number: i + 1, nama: peserta[i].namaPeserta),
-          ],
-        ),
-      ],
-    );
-  }
-}
 
 class _PesertaTile extends StatelessWidget {
   const _PesertaTile({required this.number, required this.nama});
@@ -1971,11 +1593,7 @@ class _PesertaTile extends StatelessWidget {
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-      decoration: BoxDecoration(
-        color: const Color(0xFF1E293B),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.05)),
-      ),
+      decoration: _cardDecoration(radius: 14, borderAlpha: 0.05),
       child: Row(
         children: [
           Container(
@@ -1983,7 +1601,7 @@ class _PesertaTile extends StatelessWidget {
             height: 32,
             alignment: Alignment.center,
             decoration: BoxDecoration(
-              gradient: const LinearGradient(colors: [AppColors.primary, Color(0xFF4F46E5)]),
+              gradient: _primaryGradient,
               borderRadius: BorderRadius.circular(10),
             ),
             child: Text(

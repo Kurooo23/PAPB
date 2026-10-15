@@ -18,7 +18,7 @@ class DatabaseHelper {
 
     return openDatabase(
       path,
-      version: 8,
+      version: 9,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
       onConfigure: (db) async {
@@ -157,15 +157,23 @@ class DatabaseHelper {
       } catch (_) {}
     }
 
+    // v7: skor adu penalti
     if (oldVersion < 7) {
-      await db.execute(
-        'ALTER TABLE pertandingan ADD COLUMN skor_penalti_peserta_1 INTEGER',
-      );
-      await db.execute(
-        'ALTER TABLE pertandingan ADD COLUMN skor_penalti_peserta_2 INTEGER',
-      );
+      try {
+        await db.execute(
+          'ALTER TABLE pertandingan ADD COLUMN skor_penalti_peserta_1 INTEGER',
+        );
+      } catch (_) {}
+      try {
+        await db.execute(
+          'ALTER TABLE pertandingan ADD COLUMN skor_penalti_peserta_2 INTEGER',
+        );
+      } catch (_) {}
     }
-    if (oldVersion < 8) {
+
+    // v8 & v9: kolom best_of. v9 dibuat untuk HP yang sempat naik ke v8
+    // sebelum blok ini ada, jadi kolomnya belum pernah ditambahkan.
+    if (oldVersion < 9) {
       try {
         await db.execute(
           'ALTER TABLE turnamen ADD COLUMN best_of INTEGER NOT NULL DEFAULT 1',
