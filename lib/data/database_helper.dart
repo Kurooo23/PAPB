@@ -18,7 +18,7 @@ class DatabaseHelper {
 
     return openDatabase(
       path,
-      version: 7,
+      version: 8,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
       onConfigure: (db) async {
@@ -36,6 +36,7 @@ class DatabaseHelper {
         tipe_game      TEXT NOT NULL DEFAULT 'E-Sports',
         format_bracket TEXT NOT NULL,
         jumlah_leg     INTEGER NOT NULL DEFAULT 1,
+        best_of        INTEGER NOT NULL DEFAULT 1,
         tanggal_mulai  TEXT NOT NULL,
         kuota          INTEGER NOT NULL,
         status         TEXT NOT NULL DEFAULT 'Akan Datang',
@@ -163,6 +164,13 @@ class DatabaseHelper {
       await db.execute(
         'ALTER TABLE pertandingan ADD COLUMN skor_penalti_peserta_2 INTEGER',
       );
+    }
+    if (oldVersion < 8) {
+      try {
+        await db.execute(
+          'ALTER TABLE turnamen ADD COLUMN best_of INTEGER NOT NULL DEFAULT 1',
+        );
+      } catch (_) {}
     }
   }
 

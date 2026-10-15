@@ -499,29 +499,32 @@ class _HomeScreenState extends State<HomeScreen> {
             // Baris 2: filter
             Padding(
               padding: EdgeInsets.symmetric(horizontal: layout.sidePadding),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _SourceFilterChips(
-                    filters: _sourceFilters,
-                    selected: _selectedSourceFilter,
-                    onSelected: (value) {
-                      setState(() => _selectedSourceFilter = value);
-                      _loadTournaments();
-                    },
-                  ),
-                  if (_currentNavIndex == 0) ...[
-                    const SizedBox(height: 8),
-                    _StatusFilterChips(
-                      filters: _filters,
-                      selected: _selectedFilter,
+              child: SizedBox(
+                width: double.infinity, // paksa selebar layar, chip rata kiri
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _SourceFilterChips(
+                      filters: _sourceFilters,
+                      selected: _selectedSourceFilter,
                       onSelected: (value) {
-                        setState(() => _selectedFilter = value);
+                        setState(() => _selectedSourceFilter = value);
                         _loadTournaments();
                       },
                     ),
+                    if (_currentNavIndex == 0) ...[
+                      const SizedBox(height: 8),
+                      _StatusFilterChips(
+                        filters: _filters,
+                        selected: _selectedFilter,
+                        onSelected: (value) {
+                          setState(() => _selectedFilter = value);
+                          _loadTournaments();
+                        },
+                      ),
+                    ],
                   ],
-                ],
+                ),
               ),
             ),
 

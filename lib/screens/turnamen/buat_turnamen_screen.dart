@@ -27,9 +27,9 @@ class _FormLayout {
     const maxContentWidth = 900.0;
 
     final contentWidth =
-        screen.width > maxContentWidth ? maxContentWidth : screen.width;
+    screen.width > maxContentWidth ? maxContentWidth : screen.width;
     final extraSpace =
-        screen.width > maxContentWidth ? (screen.width - maxContentWidth) / 2 : 0.0;
+    screen.width > maxContentWidth ? (screen.width - maxContentWidth) / 2 : 0.0;
     final isCompact = screen.height < 640;
 
     return _FormLayout._(
@@ -71,6 +71,10 @@ class _BuatTurnamenScreenState extends State<BuatTurnamenScreen> {
   String _formatBracket = 'Single Elimination';
   int _jumlahLeg = 1; // 1 = 1x Tanding, 2 = Home & Away
   int _kuota = 4;
+  int _bestOf = 1; // 1 / 3 / 5 / 7, untuk cabang selain sepak bola
+
+  /// Sepak bola pakai sistem leg (1x / Home & Away), cabang lain pakai Best of.
+  bool get _usesLeg => _tipeGame == 'Sepak Bola / Futsal';
 
   final List<TextEditingController> _pesertaControllers = [];
   // Nama tim, cuma dipakai saat _shouldSplitPesertaTim true
@@ -91,22 +95,10 @@ class _BuatTurnamenScreenState extends State<BuatTurnamenScreen> {
       'sample': ['Real Madrid', 'FC Barcelona', 'Manchester City', 'Arsenal', 'Liverpool', 'Bayern Munich', 'PSG', 'Juventus', 'AC Milan', 'Inter Milan', 'Chelsea', 'Dortmund', 'Atletico Madrid', 'Tottenham', 'Napoli', 'Ajax'],
     },
     {
-      'name': 'Bulu Tangkis',
-      'icon': Icons.sports_tennis_rounded,
-      'rule': 'Sistem Game / Rubber Set (cth: 2-0 atau 2-1). Tidak ada hasil seri.',
-      'sample': ['Viktor Axelsen', 'Anthony Ginting', 'Jonatan Christie', 'Shi Yuqi', 'Kunlavut Vitidsarn', 'Lee Zii Jia', 'Loh Kean Yew', 'Kodai Naraoka', 'Chou Tien Chen', 'Kento Momota', 'Anders Antonsen', 'Prannoy H.S.'],
-    },
-    {
       'name': 'Bola Basket',
       'icon': Icons.sports_basketball_rounded,
       'rule': 'Skor Poin Basket (cth: 88 - 82). Penentuan pemenang lewat Overtime jika imbang.',
       'sample': ['LA Lakers', 'Golden State Warriors', 'Boston Celtics', 'Chicago Bulls', 'Miami Heat', 'Milwaukee Bucks', 'Denver Nuggets', 'Phoenix Suns', 'Dallas Mavericks', 'Brooklyn Nets', 'Philadelphia 76ers', 'San Antonio Spurs'],
-    },
-    {
-      'name': 'Bola Voli',
-      'icon': Icons.sports_volleyball_rounded,
-      'rule': 'Sistem Set 25 Poin (Best of 3 / 5 Sets). Tidak ada hasil seri.',
-      'sample': ['Jakarta LavAni', 'Jakarta Bhayangkara', 'Jakarta STIN BIN', 'Palembang BSB', 'Kudus Sukun Badak', 'Surabaya Samator', 'Jakarta Garuda', 'Bandung BJB'],
     },
     {
       'name': 'Catur',
@@ -167,13 +159,13 @@ class _BuatTurnamenScreenState extends State<BuatTurnamenScreen> {
 
   Map<String, dynamic> get _currentGame => _gameTypeList.firstWhere(
         (g) => g['name'] == _tipeGame,
-        orElse: () => _gameTypeList[0],
-      );
+    orElse: () => _gameTypeList[0],
+  );
 
   String get _currentFormatDesc => _formatList.firstWhere(
         (f) => f['name'] == _formatBracket,
-        orElse: () => _formatList[0],
-      )['desc'] as String;
+    orElse: () => _formatList[0],
+  )['desc'] as String;
 
   @override
   void initState() {
@@ -220,6 +212,14 @@ class _BuatTurnamenScreenState extends State<BuatTurnamenScreen> {
         if (_kuota < 2) _kuota = 2;
       }
       _updatePesertaFields(_kuota);
+    });
+  }
+
+  void _onGameTypeChanged(String name) {
+    setState(() {
+      _tipeGame = name;
+      // Pindah dari sepak bola: leg dikembalikan ke 1x
+      if (name != 'Sepak Bola / Futsal') _jumlahLeg = 1;
     });
   }
 
@@ -313,13 +313,17 @@ class _BuatTurnamenScreenState extends State<BuatTurnamenScreen> {
           : null;
 
       final effectiveGameType =
-          _tipeGame == 'Lainnya (Custom)' && _customGameController.text.trim().isNotEmpty
-              ? _customGameController.text.trim()
-              : _tipeGame;
+      _tipeGame == 'Lainnya (Custom)' && _customGameController.text.trim().isNotEmpty
+          ? _customGameController.text.trim()
+          : _tipeGame;
 
       final deskripsi = _deskripsiController.text.trim().isEmpty
           ? null
           : _deskripsiController.text.trim();
+
+      // Leg cuma untuk sepak bola, Best of untuk cabang lain
+      final effectiveLeg = _usesLeg ? _jumlahLeg : 1;
+      final effectiveBestOf = _usesLeg ? 1 : _bestOf;
 
       if (_isPrivate) {
         await _localService.createTurnamen(
@@ -327,7 +331,8 @@ class _BuatTurnamenScreenState extends State<BuatTurnamenScreen> {
           deskripsi: deskripsi,
           tipeGame: effectiveGameType,
           formatBracket: _formatBracket,
-          jumlahLeg: _jumlahLeg,
+          jumlahLeg: effectiveLeg,
+          bestOf: effectiveBestOf,
           tanggalMulai: DateTime.now(),
           kuota: _kuota,
           peserta: pesertaList,
@@ -347,7 +352,8 @@ class _BuatTurnamenScreenState extends State<BuatTurnamenScreen> {
           deskripsi: deskripsi,
           tipeGame: effectiveGameType,
           formatBracket: _formatBracket,
-          jumlahLeg: _jumlahLeg,
+          jumlahLeg: effectiveLeg,
+          bestOf: effectiveBestOf,
           tanggalMulai: DateTime.now(),
           kuota: _kuota,
           peserta: pesertaList,
@@ -583,7 +589,7 @@ class _BuatTurnamenScreenState extends State<BuatTurnamenScreen> {
                     selected: _tipeGame,
                     rule: _currentGame['rule'] as String,
                     customController: _customGameController,
-                    onSelected: (name) => setState(() => _tipeGame = name),
+                    onSelected: _onGameTypeChanged,
                   ),
                 ),
                 right: _Section(
@@ -599,14 +605,17 @@ class _BuatTurnamenScreenState extends State<BuatTurnamenScreen> {
               ),
               SizedBox(height: layout.sectionGap * 0.7),
 
-              // Bagian 3: Leg | Kuota
+              // Bagian 3: Leg / Best of | Kuota
               _ResponsivePair(
                 isWide: layout.isWide,
                 gap: layout.gap,
                 verticalGap: 14,
-                left: _LegSelector(
+                left: _SeriesSelector(
+                  usesLeg: _usesLeg,
                   jumlahLeg: _jumlahLeg,
-                  onChanged: (leg) => setState(() => _jumlahLeg = leg),
+                  bestOf: _bestOf,
+                  onLegChanged: (leg) => setState(() => _jumlahLeg = leg),
+                  onBestOfChanged: (bo) => setState(() => _bestOf = bo),
                 ),
                 right: _KuotaSelector(
                   kuota: _kuota,
@@ -1066,11 +1075,38 @@ class _FormatSelector extends StatelessWidget {
   }
 }
 
-class _LegSelector extends StatelessWidget {
-  const _LegSelector({required this.jumlahLeg, required this.onChanged});
+/// Sepak bola: 1x Tanding / 2x Home & Away (leg).
+/// Cabang lain: Best of 1 / 3 / 5 / 7 (dibagi rata 1:1:1:1).
+class _SeriesSelector extends StatelessWidget {
+  const _SeriesSelector({
+    required this.usesLeg,
+    required this.jumlahLeg,
+    required this.bestOf,
+    required this.onLegChanged,
+    required this.onBestOfChanged,
+  });
 
+  final bool usesLeg;
   final int jumlahLeg;
-  final ValueChanged<int> onChanged;
+  final int bestOf;
+  final ValueChanged<int> onLegChanged;
+  final ValueChanged<int> onBestOfChanged;
+
+  static const _bestOfOptions = [1, 3, 5, 7];
+
+  String get _description {
+    if (usesLeg) {
+      return jumlahLeg == 1
+          ? '• 1x Tanding: Setiap pertemuan hanya 1 laga (format standar turnamen cepat).'
+          : '• 2x Tanding: Format Kandang & Tandang (Home & Away / 2 Leg) untuk setiap pertemuan.';
+    }
+    if (bestOf == 1) {
+      return '• Best of 1: Cukup 1 game, pemenang langsung ditentukan.';
+    }
+    final target = (bestOf ~/ 2) + 1;
+    return '• Best of $bestOf: Pemenang adalah yang pertama menang $target game. '
+        'Skor diinput sebagai jumlah game yang dimenangkan (cth: $target-${target - 1}).';
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1078,35 +1114,53 @@ class _LegSelector extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const _CardHeader(icon: Icons.repeat_rounded, title: 'Sistem Pertemuan (Jumlah Leg)'),
-          const SizedBox(height: 10),
-          // Dua pilihan dibagi rata 1:1
-          Row(
-            children: [
-              Expanded(
-                child: _OptionChip(
-                  icon: Icons.flash_on_rounded,
-                  label: '1x Tanding (Single)',
-                  selected: jumlahLeg == 1,
-                  onSelected: () => onChanged(1),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: _OptionChip(
-                  icon: Icons.compare_arrows_rounded,
-                  label: '2x (Home & Away)',
-                  selected: jumlahLeg == 2,
-                  onSelected: () => onChanged(2),
-                ),
-              ),
-            ],
+          _CardHeader(
+            icon: usesLeg ? Icons.repeat_rounded : Icons.military_tech_rounded,
+            title: usesLeg ? 'Sistem Pertemuan (Jumlah Leg)' : 'Format Seri (Best of)',
           ),
+          const SizedBox(height: 10),
+          if (usesLeg)
+          // Dua pilihan dibagi rata 1:1
+            Row(
+              children: [
+                Expanded(
+                  child: _OptionChip(
+                    icon: Icons.flash_on_rounded,
+                    label: '1x Tanding (Single)',
+                    selected: jumlahLeg == 1,
+                    onSelected: () => onLegChanged(1),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _OptionChip(
+                    icon: Icons.compare_arrows_rounded,
+                    label: '2x (Home & Away)',
+                    selected: jumlahLeg == 2,
+                    onSelected: () => onLegChanged(2),
+                  ),
+                ),
+              ],
+            )
+          else
+          // Empat pilihan dibagi rata 1:1:1:1
+            Row(
+              children: [
+                for (int i = 0; i < _bestOfOptions.length; i++) ...[
+                  if (i > 0) const SizedBox(width: 8),
+                  Expanded(
+                    child: _BestOfOption(
+                      value: _bestOfOptions[i],
+                      selected: bestOf == _bestOfOptions[i],
+                      onTap: () => onBestOfChanged(_bestOfOptions[i]),
+                    ),
+                  ),
+                ],
+              ],
+            ),
           const SizedBox(height: 8),
           Text(
-            jumlahLeg == 1
-                ? '• 1x Tanding: Setiap pertemuan hanya 1 laga (format standar turnamen cepat).'
-                : '• 2x Tanding: Format Kandang & Tandang (Home & Away / 2 Leg) untuk setiap pertemuan.',
+            _description,
             style: const TextStyle(
               color: AppColors.textMuted,
               fontSize: 11,
@@ -1114,6 +1168,48 @@ class _LegSelector extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _BestOfOption extends StatelessWidget {
+  const _BestOfOption({
+    required this.value,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final int value;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: selected ? AppColors.primary : AppColors.bgDarkSecondary,
+      borderRadius: BorderRadius.circular(10),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(10),
+        onTap: onTap,
+        child: Container(
+          constraints: const BoxConstraints(minHeight: 44),
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: selected ? AppColors.primary : Colors.white.withValues(alpha: 0.06),
+            ),
+          ),
+          child: Text(
+            'BO$value',
+            style: TextStyle(
+              color: selected ? Colors.white : AppColors.textSecondary,
+              fontSize: 13,
+              fontWeight: selected ? FontWeight.bold : FontWeight.w500,
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -1176,8 +1272,8 @@ class _KuotaSelector extends StatelessWidget {
           Text(
             isElimination
                 ? (isDoubleElimination
-                    ? 'Double Elimination butuh min. 4 peserta (Winners & Losers Bracket):'
-                    : 'Single Elimination wajib kelipatan eksponen 2 (min. 2):')
+                ? 'Double Elimination butuh min. 4 peserta (Winners & Losers Bracket):'
+                : 'Single Elimination wajib kelipatan eksponen 2 (min. 2):')
                 : 'Bisa pilih preset atau tentukan custom minimal 2 orang:',
             style: const TextStyle(color: AppColors.textMuted, fontSize: 12),
           ),
@@ -1472,9 +1568,9 @@ class _PilihTimButton extends StatelessWidget {
         label: isNarrow
             ? const SizedBox.shrink()
             : const Text(
-                'Pilih Tim',
-                style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
-              ),
+          'Pilih Tim',
+          style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+        ),
       ),
     );
   }
@@ -1498,19 +1594,19 @@ class _SubmitButton extends StatelessWidget {
       ),
       child: isLoading
           ? const SizedBox(
-              height: 22,
-              width: 22,
-              child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5),
-            )
+        height: 22,
+        width: 22,
+        child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5),
+      )
           : const Text(
-              'Simpan & Generate Pertandingan',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
+        'Simpan & Generate Pertandingan',
+        textAlign: TextAlign.center,
+        style: TextStyle(
+          color: Colors.white,
+          fontSize: 16,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
     );
   }
 }
