@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:rivnet/routes/app_pages.dart';
-import 'package:rivnet/routes/app_routes.dart';
-import 'package:rivnet/theme/app_theme.dart';
+
+import 'package:rivnet/controllers/turnamen_controller.dart';
+import 'package:rivnet/screen/main/main_shell.dart';
+import 'package:rivnet/themes/app_theme.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
+  Get.put(TurnamenController());
   runApp(const MyApp());
 }
 
@@ -15,11 +17,10 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return GetMaterialApp(
-      title: 'RivNet',
+      title: 'Rivnet Training',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.dark,
-      initialRoute: AppRoutes.home,
-      getPages: AppPages.pages,
+      home: const MainShell(),
     );
   }
 }

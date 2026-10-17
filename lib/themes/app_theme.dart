@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:rivnet/theme/app_colors.dart';
+
+import '/themes/color.dart';
 
 // Gaya bawaan untuk komponen-komponen Material.
 // Widget seperti TextField dan FilledButton otomatis mengikuti tema ini.

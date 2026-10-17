@@ -20,14 +20,18 @@ class Pertandingan {
     this.idPeserta2,
     required this.babak,
     this.leg = 1,
-    this._skor1 = 0,
-    this._skor2 = 0,
-    this._penalti1,
-    this._penalti2,
-    this._status = 'Belum Mulai',
+    int skor1 = 0,
+    int skor2 = 0,
+    int? penalti1,
+    int? penalti2,
+    String status = 'Belum Mulai',
     this.urutan = 0,
     this.nextId,
-  });
+  }) : _skor1 = skor1,
+       _skor2 = skor2,
+       _penalti1 = penalti1,
+       _penalti2 = penalti2,
+       _status = status;
 
   int get skor1 => _skor1;
   int get skor2 => _skor2;

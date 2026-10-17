@@ -1,7 +1,6 @@
 import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:rivnet/models/match.dart';
-import 'package:rivnet/models/tournament.dart';
 
 class DatabaseHelper {
   static final DatabaseHelper instance = DatabaseHelper._internal();
@@ -89,94 +88,303 @@ class DatabaseHelper {
     }
   }
 
-  String _newId(String prefix) =>
-      '${prefix}_${DateTime.now().microsecondsSinceEpoch}';
-
-  Future<String> insertTournament(Tournament tournament) async {
+  Future<String> insertTournament({
+    required String nama,
+    required String format,
+    required int leg,
+    required int kuota,
+    required List<String> peserta,
+  }) async {
     final db = await database;
-    final id = _newId('trn');
-    tournament.id = id;
+    final id = 'trn_${DateTime.now().microsecondsSinceEpoch}';
+
+    final pesertaRows = <Map<String, Object?>>[];
 
     await db.transaction((txn) async {
-      await txn.insert('turnamen', tournament.toMap());
-      for (var i = 0; i < tournament.peserta.length; i++) {
-        await txn.insert('peserta', {
+      await txn.insert('turnamen', {
+        'id_turnamen': id,
+        'nama_turnamen': nama,
+        'format_bracket': format,
+        'jumlah_leg': leg,
+        'tanggal_mulai': DateTime.now().toIso8601String(),
+        'kuota': kuota,
+      });
+      for (var i = 0; i < peserta.length; i++) {
+        final pRow = {
           'id_peserta': '${id}_p$i',
           'id_turnamen': id,
           'urutan': i,
-          'nama_peserta': tournament.peserta[i],
-        });
+          'nama_peserta': peserta[i],
+        };
+        pesertaRows.add(pRow);
+        await txn.insert('peserta', pRow);
       }
     });
+
+    // Otomatis buat jadwal pertandingan setelah turnamen & peserta disimpan
+    await generateMatchesForTournament(
+      idTurnamen: id,
+      format: format,
+      jumlahLeg: leg,
+      pesertaRows: pesertaRows,
+    );
+
     return id;
   }
 
-  Future<List<Tournament>> getTournaments() async {
-    final db = await database;
-    final rows = await db.query('turnamen', orderBy: 'tanggal_mulai DESC');
-    final pesertaRows = await db.query(
-      'peserta',
-      orderBy: 'id_turnamen, urutan',
-    );
+  Future<List<Map<String, Object?>>> generateMatchesForTournament({
+    required String idTurnamen,
+    required String format,
+    required int jumlahLeg,
+    required List<Map<String, Object?>> pesertaRows,
+  }) async {
+    final pesertaIds = [for (final p in pesertaRows) p['id_peserta'] as String];
 
-    final byTournament = <String, List<String>>{};
-    for (final participant in pesertaRows) {
-      byTournament
-          .putIfAbsent(participant['id_turnamen'] as String, () => [])
-          .add(participant['nama_peserta'] as String);
+    final rows = <Map<String, Object?>>[];
+    int urutanCounter = 1;
+
+    if (format == 'Single Elimination' || format == 'Knockout') {
+      final kuota = pesertaIds.length;
+
+      final listNamaBabak = <String>[];
+      int currentCount = kuota ~/ 2;
+
+      String namaBabak(int count) {
+        if (count == 8) return '16 Besar';
+        if (count == 4) return 'Perempat Final';
+        if (count == 2) return 'Semifinal';
+        if (count == 1) return 'Final';
+        return 'Babak $count';
+      }
+
+      while (currentCount >= 1) {
+        listNamaBabak.add(namaBabak(currentCount));
+        currentCount = currentCount ~/ 2;
+      }
+
+      final Map<String, List<String>> roundMatchIds = {};
+      for (final bNama in listNamaBabak) {
+        int countInRound = (bNama == '16 Besar')
+            ? 8
+            : (bNama == 'Perempat Final')
+            ? 4
+            : (bNama == 'Semifinal')
+            ? 2
+            : 1;
+        roundMatchIds[bNama] = List.generate(
+          countInRound,
+          (i) => '${idTurnamen}_m_${bNama.replaceAll(' ', '_')}_$i',
+        );
+      }
+
+      if (kuota >= 4) {
+        roundMatchIds['Perebutan Juara 3'] = ['${idTurnamen}_m_juara3_0'];
+      }
+
+      for (int r = 0; r < listNamaBabak.length; r++) {
+        final bNama = listNamaBabak[r];
+        final mIds = roundMatchIds[bNama]!;
+        final isFirstRound = (r == 0);
+        final nextRoundIds = (r + 1 < listNamaBabak.length)
+            ? roundMatchIds[listNamaBabak[r + 1]]
+            : null;
+
+        for (int i = 0; i < mIds.length; i++) {
+          final mId = mIds[i];
+          final nextId = nextRoundIds != null ? nextRoundIds[i ~/ 2] : null;
+
+          for (int leg = 1; leg <= jumlahLeg; leg++) {
+            final prefixBabak = jumlahLeg > 1 ? 'Leg $leg - ' : '';
+            rows.add({
+              'id_pertandingan': jumlahLeg > 1 ? '${mId}_leg$leg' : mId,
+              'id_turnamen': idTurnamen,
+              'id_peserta_1': isFirstRound
+                  ? (leg == 2 ? pesertaIds[i * 2 + 1] : pesertaIds[i * 2])
+                  : null,
+              'id_peserta_2': isFirstRound
+                  ? (leg == 2 ? pesertaIds[i * 2] : pesertaIds[i * 2 + 1])
+                  : null,
+              'babak': '$prefixBabak$bNama',
+              'leg': leg,
+              'skor_peserta_1': 0,
+              'skor_peserta_2': 0,
+              'status': 'Belum Mulai',
+              'urutan': urutanCounter++,
+              'next_pertandingan_id': nextId,
+            });
+          }
+        }
+      }
+
+      if (kuota >= 4) {
+        final j3Id = roundMatchIds['Perebutan Juara 3']!.first;
+        for (int leg = 1; leg <= jumlahLeg; leg++) {
+          final prefixBabak = jumlahLeg > 1 ? 'Leg $leg - ' : '';
+          rows.add({
+            'id_pertandingan': jumlahLeg > 1 ? '${j3Id}_leg$leg' : j3Id,
+            'id_turnamen': idTurnamen,
+            'id_peserta_1': null,
+            'id_peserta_2': null,
+            'babak': '${prefixBabak}Perebutan Juara 3',
+            'leg': leg,
+            'skor_peserta_1': 0,
+            'skor_peserta_2': 0,
+            'status': 'Belum Mulai',
+            'urutan': urutanCounter++,
+            'next_pertandingan_id': null,
+          });
+        }
+      }
+    } else {
+      // Format Liga
+      int n = pesertaIds.length;
+      for (int leg = 1; leg <= jumlahLeg; leg++) {
+        for (int i = 0; i < n; i++) {
+          for (int j = i + 1; j < n; j++) {
+            final p1 = (leg == 1) ? pesertaIds[i] : pesertaIds[j];
+            final p2 = (leg == 1) ? pesertaIds[j] : pesertaIds[i];
+            rows.add({
+              'id_pertandingan': '${idTurnamen}_liga_${leg}_${i}_$j',
+              'id_turnamen': idTurnamen,
+              'id_peserta_1': p1,
+              'id_peserta_2': p2,
+              'babak': 'Pekan ${rows.length + 1}',
+              'leg': leg,
+              'skor_peserta_1': 0,
+              'skor_peserta_2': 0,
+              'status': 'Belum Mulai',
+              'urutan': urutanCounter++,
+              'next_pertandingan_id': null,
+            });
+          }
+        }
+      }
     }
 
-    return [
-      for (final row in rows)
-        Tournament.fromMap(row, byTournament[row['id_turnamen']] ?? []),
-    ];
+    await insertMatches(rows);
+    return rows;
   }
 
-  Future<void> updateTournament({
-    required String id,
-    required String name,
-    required String? deskripsi,
-    required String game,
-    required String status,
+  Future<void> updateMatchScore({
+    required Pertandingan match,
+    required int skor1,
+    required int skor2,
+    int? penalti1,
+    int? penalti2,
   }) async {
     final db = await database;
+
     await db.update(
-      'turnamen',
+      'pertandingan',
       {
-        'nama_turnamen': name,
-        'deskripsi': deskripsi,
-        'tipe_game': game,
-        'status': status,
-        'is_finished': status == 'Selesai' ? 1 : 0,
+        'skor_peserta_1': skor1,
+        'skor_peserta_2': skor2,
+        'skor_penalti_peserta_1': penalti1,
+        'skor_penalti_peserta_2': penalti2,
+        'status': 'Selesai',
       },
-      where: 'id_turnamen = ?',
-      whereArgs: [id],
+      where: 'id_pertandingan = ?',
+      whereArgs: [match.id],
     );
+
+    // Lanjutkan pemenang ke pertandingan berikutnya jika knockout
+    if (match.nextId != null) {
+      String? winnerId;
+      String? loserId;
+
+      if (skor1 > skor2) {
+        winnerId = match.idPeserta1;
+        loserId = match.idPeserta2;
+      } else if (skor2 > skor1) {
+        winnerId = match.idPeserta2;
+        loserId = match.idPeserta1;
+      } else if (penalti1 != null && penalti2 != null) {
+        if (penalti1 > penalti2) {
+          winnerId = match.idPeserta1;
+          loserId = match.idPeserta2;
+        } else if (penalti2 > penalti1) {
+          winnerId = match.idPeserta2;
+          loserId = match.idPeserta1;
+        }
+      }
+
+      if (winnerId != null) {
+        final nextMatchRows = await db.query(
+          'pertandingan',
+          where: 'id_pertandingan = ?',
+          whereArgs: [match.nextId],
+        );
+
+        if (nextMatchRows.isNotEmpty) {
+          final nextRow = nextMatchRows.first;
+          final p1 = nextRow['id_peserta_1'] as String?;
+
+          if (match.urutan % 2 != 0 || p1 == null) {
+            await db.update(
+              'pertandingan',
+              {'id_peserta_1': winnerId},
+              where: 'id_pertandingan = ?',
+              whereArgs: [match.nextId],
+            );
+          } else {
+            await db.update(
+              'pertandingan',
+              {'id_peserta_2': winnerId},
+              where: 'id_pertandingan = ?',
+              whereArgs: [match.nextId],
+            );
+          }
+        }
+      }
+
+      if (loserId != null && match.babak.contains('Semifinal')) {
+        final j3Rows = await db.query(
+          'pertandingan',
+          where: "id_turnamen = ? AND babak LIKE '%Perebutan Juara 3%'",
+          whereArgs: [match.idTurnamen],
+        );
+
+        if (j3Rows.isNotEmpty) {
+          final j3Row = j3Rows.first;
+          final j3Id = j3Row['id_pertandingan'] as String;
+          final p1 = j3Row['id_peserta_1'] as String?;
+
+          if (p1 == null) {
+            await db.update(
+              'pertandingan',
+              {'id_peserta_1': loserId},
+              where: 'id_pertandingan = ?',
+              whereArgs: [j3Id],
+            );
+          } else {
+            await db.update(
+              'pertandingan',
+              {'id_peserta_2': loserId},
+              where: 'id_pertandingan = ?',
+              whereArgs: [j3Id],
+            );
+          }
+        }
+      }
+    }
   }
 
-  Future<void> updateStatus(String id, String status) async {
+  // status null = Semua (yang belum selesai)
+  Future<List<Map<String, Object?>>> getTournaments({String? status}) async {
     final db = await database;
-    await db.update(
+    if (status == null) {
+      return db.query(
+        'turnamen',
+        where: "status != 'Selesai'",
+        orderBy: 'tanggal_mulai DESC',
+      );
+    }
+    return db.query(
       'turnamen',
-      {'status': status, 'is_finished': status == 'Selesai' ? 1 : 0},
-      where: 'id_turnamen = ?',
-      whereArgs: [id],
+      where: 'status = ?',
+      whereArgs: [status],
+      orderBy: 'tanggal_mulai DESC',
     );
-  }
-
-  Future<void> markFinished(String id) async {
-    final db = await database;
-    await db.update(
-      'turnamen',
-      {'is_finished': 1, 'status': 'Selesai'},
-      where: 'id_turnamen = ?',
-      whereArgs: [id],
-    );
-  }
-
-  Future<void> deleteTournament(String id) async {
-    final db = await database;
-    await db.delete('turnamen', where: 'id_turnamen = ?', whereArgs: [id]);
   }
 
   Future<List<Map<String, Object?>>> getPeserta(String idTurnamen) async {
@@ -189,113 +397,29 @@ class DatabaseHelper {
     );
   }
 
-  // Menambah satu peserta, kuota ikut naik, dan jadwal lama dihapus
-  // supaya dibuat ulang dengan jumlah peserta yang baru.
-  Future<void> addPeserta(String idTurnamen, String nama) async {
+  Future<List<Map<String, Object?>>> getMatches(String idTurnamen) async {
     final db = await database;
-
-    await db.transaction((txn) async {
-      final result = await txn.rawQuery(
-        'SELECT MAX(urutan) AS terakhir FROM peserta WHERE id_turnamen = ?',
-        [idTurnamen],
-      );
-      final urutan = ((result.first['terakhir'] as int?) ?? -1) + 1;
-
-      await txn.insert('peserta', {
-        'id_peserta': '${idTurnamen}_p$urutan',
-        'id_turnamen': idTurnamen,
-        'urutan': urutan,
-        'nama_peserta': nama,
-      });
-      await txn.rawUpdate(
-        'UPDATE turnamen SET kuota = kuota + 1 WHERE id_turnamen = ?',
-        [idTurnamen],
-      );
-      await txn.delete(
-        'pertandingan',
-        where: 'id_turnamen = ?',
-        whereArgs: [idTurnamen],
-      );
-    });
-  }
-
-  Future<void> renamePeserta(String idPeserta, String nama) async {
-    final db = await database;
-    await db.update(
-      'peserta',
-      {'nama_peserta': nama},
-      where: 'id_peserta = ?',
-      whereArgs: [idPeserta],
-    );
-  }
-
-  // peserta tidak benar-benar dihapus, hanya ditandai WO
-  // supaya nama lawan di riwayat laga tetap ada
-  Future<void> setPesertaWo(String idPeserta) async {
-    final db = await database;
-    await db.update(
-      'peserta',
-      {'is_wo': 1},
-      where: 'id_peserta = ?',
-      whereArgs: [idPeserta],
-    );
-  }
-
-  Future<List<Pertandingan>> getMatches(String idTurnamen) async {
-    final db = await database;
-    final rows = await db.query(
+    return db.query(
       'pertandingan',
       where: 'id_turnamen = ?',
       whereArgs: [idTurnamen],
       orderBy: 'urutan, leg',
     );
-    return [for (final row in rows) Pertandingan.fromMap(row)];
   }
 
-  Future<void> insertMatches(List<Pertandingan> matches) async {
+  // Simpan banyak pertandingan sekaligus
+  Future<void> insertMatches(List<Map<String, Object?>> rows) async {
     final db = await database;
     final batch = db.batch();
-    for (final match in matches) {
-      batch.insert('pertandingan', match.toMap());
+    for (final row in rows) {
+      batch.insert('pertandingan', row);
     }
     await batch.commit(noResult: true);
   }
 
-  Future<void> saveScore(
-    String idPertandingan, {
-    required int skor1,
-    required int skor2,
-    int? penalti1,
-    int? penalti2,
-  }) async {
+  Future<void> deleteTournament(String id) async {
     final db = await database;
-    await db.update(
-      'pertandingan',
-      {
-        'skor_peserta_1': skor1,
-        'skor_peserta_2': skor2,
-        'skor_penalti_peserta_1': penalti1,
-        'skor_penalti_peserta_2': penalti2,
-        'status': 'Selesai',
-      },
-      where: 'id_pertandingan = ?',
-      whereArgs: [idPertandingan],
-    );
-  }
-
-  // slot 1 = id_peserta_1, slot 2 = id_peserta_2
-  Future<void> setPeserta(
-    String idPertandingan,
-    int slot,
-    String idPeserta,
-  ) async {
-    final db = await database;
-    await db.update(
-      'pertandingan',
-      {'id_peserta_$slot': idPeserta},
-      where: 'id_pertandingan = ?',
-      whereArgs: [idPertandingan],
-    );
+    await db.delete('turnamen', where: 'id_turnamen = ?', whereArgs: [id]);
   }
 
   Future<void> close() async {

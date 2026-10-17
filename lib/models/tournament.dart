@@ -21,9 +21,10 @@ class Tournament {
     this.jumlahLeg = 1,
     this.kuota = 4,
     this.peserta = const [],
-    this._status = 'Akan Datang',
-    this._isFinished = false,
-  });
+    String status = 'Akan Datang',
+    bool isFinished = false,
+  }) : _status = status,
+       _isFinished = isFinished;
 
   String get status => _status;
   bool get isFinished => _isFinished;

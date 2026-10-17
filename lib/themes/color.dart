@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-// Semua warna aplikasi dikumpulkan di sini.
 // Kalau mau ganti warna, cukup ubah di file ini saja.
 class AppColors {
   AppColors._();
@@ -37,6 +36,12 @@ class AppColors {
   static const podiumGold = Color(0x0DFFD700);
   static const podiumSilver = Color(0x08C0C0C0);
   static const podiumBronze = Color(0x08CD7F32);
+
+  static const black = Color(0xff000000);
+  static const kBackground = Color(0xFF111A2E);
+  static const kNavBar = Color(0xFF1B2538);
+  static const kTeal = Color(0xFF2DD4BF);
+  static const kPurple = Color(0xFF6366F1);
 
   static const primaryGradient = LinearGradient(colors: [primary, primaryDark]);
 }
