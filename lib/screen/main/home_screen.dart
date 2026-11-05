@@ -4,32 +4,32 @@ import 'package:rivnet/controllers/turnamen_controller.dart';
 import 'package:rivnet/routes/app_routes.dart';
 import 'package:rivnet/widgets/turnamen_card.dart';
 
-class MainShell extends StatefulWidget {
-  const MainShell({super.key});
+class HomeScreen extends StatefulWidget {
+  const HomeScreen({super.key});
 
   @override
-  State<MainShell> createState() => _MainShellState();
+  State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _MainShellState extends State<MainShell> {
-  int _index = 0;
+class _HomeScreenState extends State<HomeScreen> {
+  int _indeksTabTerpilih = 0;
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(_index == 0 ? 'Turnamen' : 'Riwayat Turnamen'),
+        title: Text(_indeksTabTerpilih == 0 ? 'Turnamen' : 'Riwayat Turnamen'),
       ),
       body: IndexedStack(
-        index: _index,
+        index: _indeksTabTerpilih,
         children: const [
-          DaftarTurnamen(riwayat: false),
-          DaftarTurnamen(riwayat: true),
+          DaftarTurnamen(apakahRiwayat: false),
+          DaftarTurnamen(apakahRiwayat: true),
         ],
       ),
-      floatingActionButton: _index == 0
+      floatingActionButton: _indeksTabTerpilih == 0
           ? FloatingActionButton.extended(
-              // Named Route pakai Navigator.pushNamed (bukan Get.toNamed)
+              // Named Route
               onPressed: () =>
                   Navigator.pushNamed(context, Routes.createTurnament),
               icon: const Icon(Icons.add),
@@ -37,8 +37,9 @@ class _MainShellState extends State<MainShell> {
             )
           : null,
       bottomNavigationBar: NavigationBar(
-        selectedIndex: _index,
-        onDestinationSelected: (i) => setState(() => _index = i),
+        selectedIndex: _indeksTabTerpilih,
+        onDestinationSelected: (indeksBaru) =>
+            setState(() => _indeksTabTerpilih = indeksBaru),
         destinations: const [
           NavigationDestination(
             icon: Icon(Icons.emoji_events_outlined),
@@ -56,38 +57,42 @@ class _MainShellState extends State<MainShell> {
   }
 }
 
-/// riwayat = false -> turnamen yang belum selesai
-/// riwayat = true  -> turnamen yang sudah selesai
+/// apakahRiwayat = false -> turnamen yang belum selesai
+/// apakahRiwayat = true  -> turnamen yang sudah selesai
 class DaftarTurnamen extends StatelessWidget {
-  final bool riwayat;
-  const DaftarTurnamen({super.key, required this.riwayat});
+  final bool apakahRiwayat;
+  const DaftarTurnamen({super.key, required this.apakahRiwayat});
 
   @override
   Widget build(BuildContext context) {
     // Akses controller via singleton (bukan Get.find)
-    final tc = TurnamenController.instance;
+    final turnamenController = TurnamenController.instance;
 
-    // AnimatedBuilder menggantikan Obx (bukan GetX)
     return AnimatedBuilder(
-      animation: tc,
-      builder: (context, _) {
-        final data = tc.turnamen
+      animation: turnamenController,
+      builder: (context, child) {
+        final daftarTurnamen = turnamenController.turnamen
             .where(
-              (t) => riwayat ? t.status == 'Selesai' : t.status != 'Selesai',
+              (turnamen) => apakahRiwayat
+                  ? turnamen.status == 'Selesai'
+                  : turnamen.status != 'Selesai',
             )
             .toList();
 
-        if (data.isEmpty) {
+        if (daftarTurnamen.isEmpty) {
           return Center(
             child: Text(
-              riwayat ? 'Belum ada riwayat turnamen.' : 'Belum ada turnamen.',
+              apakahRiwayat
+                  ? 'Belum ada riwayat turnamen.'
+                  : 'Belum ada turnamen.',
             ),
           );
         }
         return ListView.builder(
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 90),
-          itemCount: data.length,
-          itemBuilder: (_, i) => TurnamenCard(t: data[i]),
+          itemCount: daftarTurnamen.length,
+          itemBuilder: (context, indeks) =>
+              TurnamenCard(turnamen: daftarTurnamen[indeks]),
         );
       },
     );

@@ -1,26 +1,52 @@
 import 'package:flutter/material.dart';
-import 'package:get/get.dart';
 
-import 'package:rivnet/controllers/turnamen_controller.dart';
-import 'package:rivnet/screen/main/main_shell.dart';
+import 'package:rivnet/routes/app_routes.dart';
+import 'package:rivnet/screen/main/home_screen.dart';
+import 'package:rivnet/screen/turnamen/create_turnament.dart';
+import 'package:rivnet/screen/turnamen/detail_turnament.dart';
 import 'package:rivnet/themes/app_theme.dart';
+import 'package:rivnet/utils/pesan.dart';
 
 void main() {
-  WidgetsFlutterBinding.ensureInitialized();
-  Get.put(TurnamenController());
-  runApp(const MyApp());
+  runApp(const RivnetApp());
 }
 
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+class RivnetApp extends StatelessWidget {
+  const RivnetApp({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return GetMaterialApp(
-      title: 'Rivnet Training',
+    return MaterialApp(
       debugShowCheckedModeBanner: false,
+      title: 'Rivnet',
       theme: AppTheme.dark,
-      home: const MainShell(),
+      darkTheme: AppTheme.dark,
+      themeMode: ThemeMode.dark,
+      navigatorKey: navigatorKey,
+      scaffoldMessengerKey: scaffoldMessengerKey,
+      initialRoute: Routes.home,
+      onGenerateRoute: (settings) {
+        Widget halaman;
+        switch (settings.name) {
+          case Routes.createTurnament:
+          case Routes.editTurnament:
+            // edit turnament & create turnament pakai layar yang sama
+            halaman = const CreateTurnamentScreen();
+            break;
+          case Routes.detailTurnament:
+            halaman = const DetailTurnamentScreen();
+            break;
+          case Routes.home:
+          default:
+            halaman = const HomeScreen();
+        }
+        return PageRouteBuilder(
+          settings: settings,
+          pageBuilder: (context, animasi, animasiSekunder) => halaman,
+          transitionDuration: Duration.zero,
+          reverseTransitionDuration: Duration.zero,
+        );
+      },
     );
   }
 }

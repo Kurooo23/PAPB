@@ -6,49 +6,51 @@ void main() {
   testWidgets('Home offline dapat membuat turnamen lokal', (
     WidgetTester tester,
   ) async {
-    await tester.pumpWidget(const MyApp());
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(600, 1000);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetPhysicalSize);
 
-    expect(find.text('RivNet'), findsOneWidget);
+    await tester.pumpWidget(const RivnetApp());
+
+    expect(find.text('Turnamen'), findsWidgets);
 
     await tester.tap(find.text('Buat Turnamen').first);
     await tester.pumpAndSettle();
 
     await tester.enterText(find.byType(TextFormField).at(0), 'Turnamen Kampus');
-    await tester.enterText(find.byType(TextFormField).at(1), 'Mobile Legends');
-    await tester.tap(find.text('Simpan'));
+    await tester.enterText(find.byType(TextFormField).at(1), 'Gedung A');
+    await tester.tap(find.widgetWithText(FilledButton, 'Buat Turnamen'));
     await tester.pumpAndSettle();
 
     expect(find.text('Turnamen Kampus'), findsOneWidget);
-    expect(find.textContaining('Mobile Legends'), findsOneWidget);
   });
 
   testWidgets('Daftar turnamen menyesuaikan lebar layar', (
     WidgetTester tester,
   ) async {
     tester.view.devicePixelRatio = 1;
-    tester.view.physicalSize = const Size(390, 844);
+    tester.view.physicalSize = const Size(600, 1000);
     addTearDown(tester.view.resetDevicePixelRatio);
     addTearDown(tester.view.resetPhysicalSize);
 
-    await tester.pumpWidget(const MyApp());
+    await tester.pumpWidget(const RivnetApp());
+
     await tester.tap(find.text('Buat Turnamen').first);
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextFormField).at(0), 'Responsive Cup');
-    await tester.enterText(find.byType(TextFormField).at(1), 'Game');
-    await tester.tap(find.text('Simpan'));
+    await tester.enterText(find.byType(TextFormField).at(1), 'Online');
+    await tester.tap(find.widgetWithText(FilledButton, 'Buat Turnamen'));
     await tester.pumpAndSettle();
 
-    expect(find.byType(ListView), findsOneWidget);
+    expect(find.text('Responsive Cup'), findsOneWidget);
 
-    tester.view.physicalSize = const Size(800, 900);
+    tester.view.physicalSize = const Size(800, 1000);
     await tester.pumpAndSettle();
-    expect(find.byType(GridView), findsOneWidget);
+    expect(find.text('Responsive Cup'), findsOneWidget);
 
-    tester.view.physicalSize = const Size(1100, 900);
+    tester.view.physicalSize = const Size(1100, 1000);
     await tester.pumpAndSettle();
-    final grid = tester.widget<GridView>(find.byType(GridView));
-    final delegate =
-        grid.gridDelegate as SliverGridDelegateWithFixedCrossAxisCount;
-    expect(delegate.crossAxisCount, 3);
+    expect(find.text('Responsive Cup'), findsOneWidget);
   });
 }

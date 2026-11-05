@@ -38,10 +38,6 @@ class AppColors {
   static const podiumBronze = Color(0x08CD7F32);
 
   static const black = Color(0xff000000);
-  static const kBackground = Color(0xFF111A2E);
-  static const kNavBar = Color(0xFF1B2538);
-  static const kTeal = Color(0xFF2DD4BF);
-  static const kPurple = Color(0xFF6366F1);
 
   static const primaryGradient = LinearGradient(colors: [primary, primaryDark]);
 }

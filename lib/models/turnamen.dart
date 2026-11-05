@@ -1,51 +1,72 @@
-import 'package:get/get.dart';
+import 'package:flutter/foundation.dart';
 
-int _no = 0;
-String buatId(String prefix) => '$prefix-${++_no}';
+int _counterIdOtomatis = 0;
+String buatId(String awalanId) => '$awalanId-${++_counterIdOtomatis}';
 
 class Peserta {
   final String id;
-  final RxString nama;
-  Peserta({required this.id, required String nama}) : nama = nama.obs;
+  String nama;
+  Peserta({required this.id, required this.nama});
 }
 
 class Pertandingan {
   final String id;
   final String idA;
   final String idB;
-  final int skorA;
-  final int skorB;
-  const Pertandingan({
+  int? skorA;
+  int? skorB;
+
+  Pertandingan({
     required this.id,
     required this.idA,
     required this.idB,
-    required this.skorA,
-    required this.skorB,
+    this.skorA,
+    this.skorB,
   });
+
+  bool get selesai => skorA != null && skorB != null;
 }
 
-class Turnamen {
+class Turnamen extends ChangeNotifier {
   static const daftarStatus = ['Akan Datang', 'Berlangsung', 'Selesai'];
 
   final String id;
-  final RxString nama;
-  final RxString game;
-  final RxString lokasi;
-  final RxString status;
-  final peserta = <Peserta>[].obs;
-  final pertandingan = <Pertandingan>[].obs;
+  String nama;
+  String game;
+  int leg;
+  String status;
+  final List<Peserta> peserta;
+  final List<Pertandingan> pertandingan;
 
   Turnamen({
     required this.id,
-    required String nama,
-    required String game,
-    required String lokasi,
-    String status = 'Akan Datang',
-  }) : nama = nama.obs,
-       game = game.obs,
-       lokasi = lokasi.obs,
-       status = status.obs;
+    required this.nama,
+    required this.game,
+    this.leg = 1,
+    this.status = 'Akan Datang',
+    List<Peserta>? peserta,
+    List<Pertandingan>? pertandingan,
+  }) : peserta = peserta ?? [],
+       pertandingan = pertandingan ?? [];
 
-  String namaPeserta(String idPeserta) =>
-      peserta.firstWhereOrNull((p) => p.id == idPeserta)?.nama.value ?? '-';
+  String namaPeserta(String idPeserta) {
+    for (final itemPeserta in peserta) {
+      if (itemPeserta.id == idPeserta) return itemPeserta.nama;
+    }
+    return '-';
+  }
+
+  String get namaTurnamen => nama;
+  set namaTurnamen(String nilai) => nama = nilai;
+
+  String get gameTurnamen => game;
+  set gameTurnamen(String nilai) => game = nilai;
+
+  int get jumlahLeg => leg;
+  set jumlahLeg(int nilai) => leg = nilai;
+
+  String get statusTurnamen => status;
+  set statusTurnamen(String nilai) {
+    if (daftarStatus.contains(nilai)) status = nilai;
+  }
 }
