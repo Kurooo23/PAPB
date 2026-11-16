@@ -42,15 +42,32 @@ class LogoKlub extends StatelessWidget {
       SizedBox(width: ukuran, height: ukuran, child: widgetIsi);
 
   Widget _bangunGambar(String urlLogo) {
-    final urlGambar = (ukuran <= 64 && urlLogo.contains('thesportsdb.com'))
-        ? '$urlLogo/small'
-        : urlLogo;
     return _wadahKotak(
       Image.network(
-        urlGambar,
+        urlLogo,
         fit: BoxFit.contain,
-        webHtmlElementStrategy: WebHtmlElementStrategy.fallback,
-        errorBuilder: (context, error, stackTrace) => _tampilkanInisial(),
+        headers: const {
+          'User-Agent':
+              'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        },
+        // Sebelum byte pertama datang, loadingProgress masih null sehingga
+        // widget lama menampilkan kotak KOSONG. frameBuilder memperbaiki itu:
+        // selama belum ada frame, tampilkan spinner.
+        frameBuilder: (context, child, frame, sinkron) {
+          if (sinkron || frame != null) return child;
+          return const Center(
+            child: SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(strokeWidth: 1.5),
+            ),
+          );
+        },
+        errorBuilder: (context, error, stackTrace) {
+          // Error asli sebelumnya ditelan diam-diam. Sekarang dicetak.
+          debugPrint('[LogoKlub] GAGAL "$nama" -> $urlLogo\n   $error');
+          return _tampilkanInisial();
+        },
       ),
     );
   }

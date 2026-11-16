@@ -64,6 +64,7 @@ class _PilihKlubSheetState extends State<_PilihKlubSheet> {
     _timerDebounce?.cancel();
     // Tunggu user selesai mengetik supaya tidak spam request API
     _timerDebounce = Timer(const Duration(milliseconds: 500), () {
+      if (!mounted) return;
       final kataBersih = teksPencarian.trim();
       setState(() {
         _kataKunciPencarian = kataBersih;

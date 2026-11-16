@@ -93,12 +93,15 @@ class TurnamenCard extends StatelessWidget {
                           size: 16,
                           color: Colors.white54,
                         ),
-                        Padding(
-                          padding: const EdgeInsets.only(left: 6),
-                          child: Text(
-                            '${turnamen.peserta.length} peserta • '
-                            '$jumlahPertandinganSelesai'
-                            '/${turnamen.pertandingan.length} match selesai',
+                        Flexible(
+                          child: Padding(
+                            padding: const EdgeInsets.only(left: 6),
+                            child: Text(
+                              '${turnamen.format} • ${turnamen.peserta.length} peserta • '
+                              '$jumlahPertandinganSelesai'
+                              '/${turnamen.pertandingan.length} match selesai',
+                              overflow: TextOverflow.ellipsis,
+                            ),
                           ),
                         ),
                       ],

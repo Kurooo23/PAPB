@@ -8,6 +8,7 @@ import 'package:rivnet/themes/app_theme.dart';
 import 'package:rivnet/utils/pesan.dart';
 
 void main() {
+  WidgetsFlutterBinding.ensureInitialized();
   runApp(const RivnetApp());
 }
 
@@ -40,11 +41,9 @@ class RivnetApp extends StatelessWidget {
           default:
             halaman = const HomeScreen();
         }
-        return PageRouteBuilder(
+        return MaterialPageRoute(
           settings: settings,
-          pageBuilder: (context, animasi, animasiSekunder) => halaman,
-          transitionDuration: Duration.zero,
-          reverseTransitionDuration: Duration.zero,
+          builder: (context) => halaman,
         );
       },
     );

@@ -15,6 +15,12 @@ class _HomeScreenState extends State<HomeScreen> {
   int _indeksTabTerpilih = 0;
 
   @override
+  void initState() {
+    super.initState();
+    TurnamenController.instance.muatDariDatabase();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
@@ -71,6 +77,31 @@ class DaftarTurnamen extends StatelessWidget {
     return AnimatedBuilder(
       animation: turnamenController,
       builder: (context, child) {
+        if (!turnamenController.sudahDimuat &&
+            turnamenController.sedangMemuat) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (!turnamenController.sudahDimuat &&
+            turnamenController.errorMuat != null) {
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text('Gagal memuat database.'),
+                  const SizedBox(height: 12),
+                  FilledButton(
+                    onPressed: () =>
+                        turnamenController.muatDariDatabase(paksa: true),
+                    child: const Text('Coba Lagi'),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+
         final daftarTurnamen = turnamenController.turnamen
             .where(
               (turnamen) => apakahRiwayat
@@ -88,11 +119,50 @@ class DaftarTurnamen extends StatelessWidget {
             ),
           );
         }
+        final lebarLayar = MediaQuery.of(context).size.width;
+        final duaKolom = lebarLayar > 600;
+        const paddingLuar = 16.0;
+        const gap = 12.0;
+
+        if (!duaKolom) {
+          return ListView.builder(
+            padding: const EdgeInsets.fromLTRB(
+              paddingLuar,
+              16,
+              paddingLuar,
+              90,
+            ),
+            itemCount: daftarTurnamen.length,
+            itemBuilder: (context, indeks) =>
+                TurnamenCard(turnamen: daftarTurnamen[indeks]),
+          );
+        }
+
+        // Layar lebar (> 600): Row 2 kolom rasio 1:1 berbasis MediaQuery
+        final lebarKartu = (lebarLayar - paddingLuar * 2 - gap) / 2;
         return ListView.builder(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 90),
-          itemCount: daftarTurnamen.length,
-          itemBuilder: (context, indeks) =>
-              TurnamenCard(turnamen: daftarTurnamen[indeks]),
+          padding: const EdgeInsets.fromLTRB(paddingLuar, 16, paddingLuar, 90),
+          itemCount: (daftarTurnamen.length / 2).ceil(),
+          itemBuilder: (context, indeksBaris) {
+            final indeksKiri = indeksBaris * 2;
+            final indeksKanan = indeksKiri + 1;
+            return Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SizedBox(
+                  width: lebarKartu,
+                  child: TurnamenCard(turnamen: daftarTurnamen[indeksKiri]),
+                ),
+                const SizedBox(width: gap),
+                SizedBox(
+                  width: lebarKartu,
+                  child: indeksKanan < daftarTurnamen.length
+                      ? TurnamenCard(turnamen: daftarTurnamen[indeksKanan])
+                      : const SizedBox.shrink(),
+                ),
+              ],
+            );
+          },
         );
       },
     );

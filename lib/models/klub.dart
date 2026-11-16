@@ -1,4 +1,4 @@
-/// Data klub sepak bola dari API TheSportsDB.
+/// Data klub sepak bola dari API Top 5 Liga Eropa.
 class Klub {
   final String id;
   final String nama;
@@ -15,28 +15,19 @@ class Klub {
   });
 
   factory Klub.fromJson(Map<String, dynamic> jsonKlub) {
-    // Field logo di API kadang bernama strBadge (baru) / strTeamBadge (lama)
     final logoBadge =
-        (jsonKlub['strBadge'] ?? jsonKlub['strTeamBadge']) as String?;
+        (jsonKlub['logoUrl'] ?? jsonKlub['strBadge']) as String?;
     return Klub(
-      id: '${jsonKlub['idTeam'] ?? ''}',
-      nama: (jsonKlub['strTeam'] as String?) ?? '-',
-      liga: (jsonKlub['strLeague'] as String?) ?? '',
-      negara: (jsonKlub['strCountry'] as String?) ?? '',
+      id: '${jsonKlub['id'] ?? jsonKlub['idTeam'] ?? ''}',
+      nama: (jsonKlub['name'] ?? jsonKlub['strTeam'] as String?) ?? '-',
+      liga: (jsonKlub['league'] ?? jsonKlub['strLeague'] as String?) ?? '',
+      negara: (jsonKlub['country'] ?? jsonKlub['strCountry'] as String?) ?? '',
       logoUrl: (logoBadge == null || logoBadge.isEmpty) ? null : logoBadge,
     );
   }
-
-  /// URL logo versi kecil (lebih ringan untuk list).
-  String? get logoKecil {
-    if (logoUrl == null) return null;
-    if (logoUrl!.contains('thesportsdb.com')) return '$logoUrl/small';
-    return logoUrl;
-  }
 }
 
-/// Liga-liga Eropa yang tersedia di picker.
-/// [kode] = nama liga persis seperti di TheSportsDB.
+/// Top 5 Liga Eropa yang tersedia di picker.
 class LigaEropa {
   final String kode;
   final String label;
@@ -48,7 +39,5 @@ class LigaEropa {
     LigaEropa('Italian Serie A', 'Serie A'),
     LigaEropa('German Bundesliga', 'Bundesliga'),
     LigaEropa('French Ligue 1', 'Ligue 1'),
-    LigaEropa('Dutch Eredivisie', 'Eredivisie'),
-    LigaEropa('Portuguese Primeira Liga', 'Liga Portugal'),
   ];
 }

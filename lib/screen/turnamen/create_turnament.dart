@@ -22,6 +22,7 @@ class _CreateTurnamentScreenState extends State<CreateTurnamentScreen> {
   final _formKey = GlobalKey<FormState>();
   final _controllerNama = TextEditingController();
 
+  String _format = Turnamen.formatLiga;
   int _jumlahLeg = 1;
   int _jumlahPeserta = 4;
   List<TextEditingController> _controllerPeserta = [];
@@ -30,10 +31,13 @@ class _CreateTurnamentScreenState extends State<CreateTurnamentScreen> {
   // ----- mode edit -----
   String? _idEdit;
   Turnamen? _turnamenEdit;
+  bool _sudahInitArgs = false;
   bool get _modeEdit => _idEdit != null;
 
+  static const pilihanFormat = Turnamen.daftarFormat;
   static const pilihanLeg = [1, 2];
-  static const pilihanJumlah = [4, 6, 8];
+  static const pilihanJumlahLiga = [4, 6, 8];
+  static const pilihanJumlahBracket = [4, 8];
   static const _paddingForm = 16.0;
   static const _gap = 8.0;
 
@@ -46,7 +50,8 @@ class _CreateTurnamentScreenState extends State<CreateTurnamentScreen> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (_idEdit != null) return;
+    if (_sudahInitArgs) return;
+    _sudahInitArgs = true;
     // Ambil argumen Named Route
     _idEdit = ModalRoute.of(context)?.settings.arguments as String?;
     if (_idEdit != null) {
@@ -54,9 +59,14 @@ class _CreateTurnamentScreenState extends State<CreateTurnamentScreen> {
       final turnamen = _turnamenEdit;
       if (turnamen != null) {
         _controllerNama.text = turnamen.namaTurnamen; // pakai getter
+        _format = turnamen.formatTurnamen;
         _jumlahLeg = turnamen.jumlahLeg;
         _jumlahPeserta = turnamen.peserta.length;
-        _isiPeserta(_namaDefault());
+        _isiPeserta(
+          turnamen.peserta.isNotEmpty
+              ? turnamen.peserta.map((peserta) => peserta.nama).toList()
+              : _namaDefault(),
+        );
       }
     }
   }
@@ -84,6 +94,19 @@ class _CreateTurnamentScreenState extends State<CreateTurnamentScreen> {
   }
 
   // ----- setter via setState -----
+  void _ubahFormat(String nilai) {
+    if (nilai == _format) return;
+    setState(() {
+      _format = nilai;
+      if (_format == Turnamen.formatSingleElimination) {
+        _jumlahLeg = 1;
+        if (!pilihanJumlahBracket.contains(_jumlahPeserta)) {
+          _sesuaikanControllerPeserta(_jumlahPeserta <= 4 ? 4 : 8);
+        }
+      }
+    });
+  }
+
   void _ubahLeg(int nilai) {
     if (nilai == _jumlahLeg) return;
     setState(() => _jumlahLeg = nilai);
@@ -91,22 +114,35 @@ class _CreateTurnamentScreenState extends State<CreateTurnamentScreen> {
 
   void _ubahJumlah(int nilai) {
     if (nilai == _jumlahPeserta) return;
+    if (_modeEdit &&
+        _turnamenEdit != null &&
+        !_turnamenEdit!.bisaKelolaJumlahPeserta) {
+      tampilPesan(
+        'Jumlah peserta dikunci karena sudah ada skor pertandingan.',
+        error: true,
+      );
+      return;
+    }
     setState(() {
-      _jumlahPeserta = nilai;
-      final saatIni = _controllerPeserta.length;
-      if (nilai > saatIni) {
-        for (var indeks = saatIni; indeks < nilai; indeks++) {
-          _controllerPeserta.add(
-            TextEditingController(text: 'Peserta ${indeks + 1}'),
-          );
-        }
-      } else if (nilai < saatIni) {
-        for (var indeks = nilai; indeks < saatIni; indeks++) {
-          _controllerPeserta[indeks].dispose();
-        }
-        _controllerPeserta.removeRange(nilai, saatIni);
-      }
+      _sesuaikanControllerPeserta(nilai);
     });
+  }
+
+  void _sesuaikanControllerPeserta(int nilai) {
+    _jumlahPeserta = nilai;
+    final saatIni = _controllerPeserta.length;
+    if (nilai > saatIni) {
+      for (var indeks = saatIni; indeks < nilai; indeks++) {
+        _controllerPeserta.add(
+          TextEditingController(text: 'Peserta ${indeks + 1}'),
+        );
+      }
+    } else if (nilai < saatIni) {
+      for (var indeks = nilai; indeks < saatIni; indeks++) {
+        _controllerPeserta[indeks].dispose();
+      }
+      _controllerPeserta.removeRange(nilai, saatIni);
+    }
   }
 
   // ----- simpan -----
@@ -126,9 +162,28 @@ class _CreateTurnamentScreenState extends State<CreateTurnamentScreen> {
     }
 
     setState(() => _loading = true);
-    await Future.delayed(const Duration(milliseconds: 400));
+    try {
+      final namaTurnamen = _controllerNama.text.trim();
+      if (_modeEdit && _turnamenEdit != null) {
+        await TurnamenController.instance.editTurnamen(
+          _turnamenEdit!,
+          nama: namaTurnamen,
+          format: _format,
+          leg: _jumlahLeg,
+          namaPeserta: namaPeserta,
+        );
+      } else {
+        await TurnamenController.instance.buatTurnamen(
+          nama: namaTurnamen,
+          format: _format,
+          leg: _jumlahLeg,
+          namaPeserta: namaPeserta,
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
 
-    if (mounted) setState(() => _loading = false);
     if (mounted) Navigator.pop(context);
     tampilPesan(_modeEdit ? 'Berhasil mengedit' : 'Berhasil membuat');
   }
@@ -138,10 +193,18 @@ class _CreateTurnamentScreenState extends State<CreateTurnamentScreen> {
     // MediaQuery: ambil lebar layar untuk hitung rasio kartu
     final lebarLayar = MediaQuery.of(context).size.width;
 
-    // rasio 1:1 (2 kartu leg) dengan tiap kartu = (lebar - 2*padding - 1*gap) / 2
-    final lebarKartuLeg = (lebarLayar - _paddingForm * 2 - _gap) / 2;
-    // rasio 1:1:1 (3 kartu jumlah) dengan tiap kartu = (lebar - 2*padding - 2*gap) / 3
-    final lebarKartuJumlah = (lebarLayar - _paddingForm * 2 - _gap * 2) / 3;
+    // rasio 1:1 (2 kartu) dengan tiap kartu = (lebar - 2*padding - 1*gap) / 2
+    final lebarKartuDuaKolom = (lebarLayar - _paddingForm * 2 - _gap) / 2;
+    // rasio 1:1:1 (3 kartu jumlah liga) dengan tiap kartu = (lebar - 2*padding - 2*gap) / 3
+    final lebarKartuTigaKolom = (lebarLayar - _paddingForm * 2 - _gap * 2) / 3;
+
+    final apakahSingleElimination = _format == Turnamen.formatSingleElimination;
+    final daftarJumlah = apakahSingleElimination
+        ? pilihanJumlahBracket
+        : pilihanJumlahLiga;
+    final lebarKartuJumlah = apakahSingleElimination
+        ? lebarKartuDuaKolom
+        : lebarKartuTigaKolom;
 
     // Responsive: kalau lebar > 600, nama peserta tampil 2 kolom (rasio 1:1)
     final duaKolom = lebarLayar > 600;
@@ -167,45 +230,71 @@ class _CreateTurnamentScreenState extends State<CreateTurnamentScreen> {
               ),
               Container(height: 20),
 
-              // ----- Leg (rasio 1:1) -----
-              const _Label('Leg'),
+              // ----- Format Turnamen (rasio 1:1) -----
+              const _Label('Format Turnamen'),
               Container(height: 8),
               Row(
                 children: [
                   for (
                     var indeks = 0;
-                    indeks < pilihanLeg.length;
+                    indeks < pilihanFormat.length;
                     indeks++
                   ) ...[
                     _PilihanCard(
-                      label: '${pilihanLeg[indeks]} Leg',
-                      dipilih: _jumlahLeg == pilihanLeg[indeks],
-                      lebar: lebarKartuLeg,
-                      onTap: () => _ubahLeg(pilihanLeg[indeks]),
+                      label: pilihanFormat[indeks],
+                      dipilih: _format == pilihanFormat[indeks],
+                      lebar: lebarKartuDuaKolom,
+                      onTap: () => _ubahFormat(pilihanFormat[indeks]),
                     ),
-                    if (indeks < pilihanLeg.length - 1) Container(width: _gap),
+                    if (indeks < pilihanFormat.length - 1)
+                      Container(width: _gap),
                   ],
                 ],
               ),
               Container(height: 20),
 
-              // ----- Jumlah Peserta (rasio 1:1:1) -----
+              if (!apakahSingleElimination) ...[
+                // ----- Leg (rasio 1:1) -----
+                const _Label('Leg'),
+                Container(height: 8),
+                Row(
+                  children: [
+                    for (
+                      var indeks = 0;
+                      indeks < pilihanLeg.length;
+                      indeks++
+                    ) ...[
+                      _PilihanCard(
+                        label: '${pilihanLeg[indeks]} Leg',
+                        dipilih: _jumlahLeg == pilihanLeg[indeks],
+                        lebar: lebarKartuDuaKolom,
+                        onTap: () => _ubahLeg(pilihanLeg[indeks]),
+                      ),
+                      if (indeks < pilihanLeg.length - 1)
+                        Container(width: _gap),
+                    ],
+                  ],
+                ),
+                Container(height: 20),
+              ],
+
+              // ----- Jumlah Peserta -----
               const _Label('Jumlah Peserta'),
               Container(height: 8),
               Row(
                 children: [
                   for (
                     var indeks = 0;
-                    indeks < pilihanJumlah.length;
+                    indeks < daftarJumlah.length;
                     indeks++
                   ) ...[
                     _PilihanCard(
-                      label: '${pilihanJumlah[indeks]}',
-                      dipilih: _jumlahPeserta == pilihanJumlah[indeks],
+                      label: '${daftarJumlah[indeks]}',
+                      dipilih: _jumlahPeserta == daftarJumlah[indeks],
                       lebar: lebarKartuJumlah,
-                      onTap: () => _ubahJumlah(pilihanJumlah[indeks]),
+                      onTap: () => _ubahJumlah(daftarJumlah[indeks]),
                     ),
-                    if (indeks < pilihanJumlah.length - 1)
+                    if (indeks < daftarJumlah.length - 1)
                       Container(width: _gap),
                   ],
                 ],
